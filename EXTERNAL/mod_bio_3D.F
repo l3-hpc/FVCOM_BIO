@@ -1,0 +1,1702 @@
+!/===========================================================================/
+! Copyright (c) 2007, The University of Massachusetts Dartmouth 
+! Produced at the School of Marine Science & Technology 
+! Marine Ecosystem Dynamics Modeling group
+! All rights reserved.
+!
+! FVCOM has been developed by the joint UMASSD-WHOI research team. For 
+! details of authorship and attribution of credit please see the FVCOM
+! technical manual or contact the MEDM group.
+!
+! 
+! This file is part of FVCOM. For details, see http://fvcom.smast.umassd.edu 
+! The full copyright notice is contained in the file COPYRIGHT located in the 
+! root directory of the FVCOM code. This original header must be maintained
+! in all distributed versions.
+!
+! THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" 
+! AND ANY EXPRESS OR  IMPLIED WARRANTIES, INCLUDING,  BUT NOT  LIMITED TO,
+! THE IMPLIED WARRANTIES OF MERCHANTABILITY AND  FITNESS FOR A PARTICULAR
+! PURPOSE ARE DISCLAIMED.  
+!
+!/---------------------------------------------------------------------------/
+! CVS VERSION INFORMATION
+! $Id$
+! $Name$
+! $Revision$
+!/===========================================================================/
+
+!   THIS PROGRAM LINKS 1D BIOLOGICAL CALCULATION TO FVCOM 3D COMPUTAITION
+MODULE MOD_BIO_3D 
+#  if defined (BioGen)
+   USE ALL_VARS
+!   USE MOD_NCDIO
+   USE BCS
+   USE MOD_OBCS
+# if defined (MULTIPROCESSOR)
+   USE MOD_PAR   
+# endif
+#  if defined (WET_DRY) 
+   USE MOD_WD
+#  endif
+#  if defined (SPHERICAL)
+   USE MOD_SPHERICAL
+#  endif
+
+!   use netcdf
+
+   USE MOD_1D
+   USE MOD_PHYTOPLANKTON !,   ONLY: BIO_P,NNP,INP,IRRAD0,PARFRAC
+   USE MOD_ZOOPLANKTON !,     ONLY: BIO_Z,NNZ,INZ
+   USE MOD_BACTERIA !,        ONLY: BIO_B,NNB,INB
+   USE MOD_DETRITUS !,        ONLY: BIO_D,NND,IND
+   USE MOD_DOM !,             ONLY: BIO_DOM,NNM,INM
+   USE MOD_NUTRIENT !,        ONLY: BIO_N,NNN,INN
+   USE MOD_PARAMETER
+
+   IMPLICIT NONE
+   SAVE
+   REAL(SP), ALLOCATABLE, TARGET ::  BIO_ALL(:,:,:)        !3D BIO_VARIABLES
+   REAL(SP), ALLOCATABLE ::  BIO_F(:,:,:)          !FORECASTED VARIABLES
+   REAL(SP), ALLOCATABLE ::  BIO_MEAN(:,:,:)       !MEAN VARIABLES
+   REAL(SP), ALLOCATABLE ::  XFLUX_OBCB(:,:,:)     !OPEN BOUNDARY FLUX
+   REAL(SP), ALLOCATABLE ::  BIO_MEANN(:,:,:)      !MEAN IN CELLS
+!************   FOR NETCDF OUTPUT
+   INTEGER, ALLOCATABLE :: trcsid(:)
+   REAL(SP),ALLOCATABLE :: BIO_VAR_MEAN(:,:,:)
+
+!!$   CHARACTER(LEN=80) STARTUP_BIO_TYPE  !!TYPE OF BIO START
+
+!!$   NAMELIST /NML_BIOLOGICAL/     &
+!!$       & STARTUP_BIO_TYPE       ! constant, linear, observed, set values
+
+ 
+   CONTAINS !------------------------------------------------------------------!
+            ! BIO_3D1D             :ADVANCE TMODEL USING GOTM LIBRARIES        !
+            ! BIO_ADV              :ADVECTION OF BIOLOGICAL STATE VARIABLES    !
+            ! BIO_BCOND            :BOUNDARY CONDITION                         !
+            ! BIO_EXCHANGE         :INTERPROCESSOR EXCHANGE                    !
+            ! BIO_INITIAL          :INITIALIZATION                             !
+            ! BIO_HOT_START        :HOT_START FROM BIO_RESTART.NC              !
+            ! NAME_LIST_INITIALIZE_BIO                                         !
+            ! NAME_LIST_PRINT_BIO                                              !
+            !------------------------------------------------------------------!
+SUBROUTINE BIO_3D1D
+     IMPLICIT NONE
+     SAVE
+     INTEGER  :: I,J,K,L
+!L3 add if-def for tribs
+     INTEGER :: II
+!L3 end if-def for tribs
+
+     REAL(SP) :: SPCP,ROSEA,SPRO !,BIO_VAR_MEAN(M,KBM1,NTT)
+
+  if(dbg_set(dbg_sbr)) write(ipt,*)&
+       & "Start: BIO_3D1D"
+
+     SPCP  = 4.2174E3_SP                        !HEAT SPECIFIC CAPACITY
+     ROSEA = 1.023E3_SP                         !RHO OF SEA WATER
+     SPRO=SPCP*ROSEA
+!     BIO_VAR_MEAN = 0.0_SP
+!---------------------------                    !MAIN LOOP OVER ELEMENTS
+  if(dbg_set(dbg_sbr)) write(ipt,*)&
+       & "Start: BIO_3D1D, spcp"
+
+!L3 Add if-def or put it separate subroutine ---------------!
+#  if defined (Tribs)
+! Apply nutrient loads
+     IF(DOLOADSLOCAL) THEN
+       ! Update loads daily
+       IF(MODULO(DTI*FLOAT(IINT),86400.0) == 0.0) THEN
+         LOADIND = LOADIND + 1 ! Current record in the load input arrays
+         IF(LOADIND > NLOADRECORDS) THEN
+            LOADIND = NLOADRECORDS
+            IF(MSR) PRINT*,'Load time series exceeded, using last load record'
+         ENDIF
+
+        LOADSD1(1:NTRIBS) = LOADARRD1(LOADIND,1:NTRIBS)*1000.0*N2CD*LOADFACTOR ! Update current load values, convert from kg/s to g/s
+        LOADSN1(1:NTRIBS) = LOADARRN1(LOADIND,1:NTRIBS)*1000.0*LOADFACTOR
+        ! PRINT*,'MYID=',MYID,'Updating load LOADSD1=
+        ! ',LOADSD1,'LOADSN1=',LOADSN1,'LOADFACTOR=',LOADFACTOR
+
+       ENDIF
+
+       ! Apply tributary loads
+       DO I=1,NTRIBS
+         II=MLOADLOCAL(I)
+         IF(II .NE. 0) THEN
+           J=1
+           DO K=1,KBM1
+            ! PRINT*,'LOADS',I,II,MLOADGL(I),BIO_ALL(II,K,J+INN-1),LOADSN1(I)*DTI/(D(II)*ART1(II)+1.0E-30),BIO_ALL(II,K,J+IND-1),LOADSD1(I)*DTI/(D(II)*ART1(II)+1.0E-30)
+             ! Detritus 1 load, add D1 and N1
+             BIO_ALL(II,K,J+IND-1) = BIO_ALL(II,K,J+IND-1) + (LOADSD1(I)+LOADSN1(I))*DTI/(D(II)*ART1(II)+1.0E-30)
+           ENDDO ! K
+         ENDIF
+       ENDDO !NTRIBS
+     ENDIF ! End if DOLOADSLOCAL
+
+     ! Apply average Lake Michigan atmospheric phosphorus load to the surface
+     ! layer
+     !  of 310 metric tons/year = 310*1e6/(57629.98 km2 *1000*1000)/365/24/3600
+     !  = 1.705716e-10 gP/m2/s 
+     ! D.M. Dolan, S.C. Chapra / Journal of Great Lakes Research 38 (2012)
+     ! 730–740, Table 5
+     DO I=1,M
+       J=1
+       K=1
+       BIO_ALL(I,K,J+IND-1) = BIO_ALL(I,K,J+IND-1) + 1.705716E-10 * DTI / (DZ(I,K)*D(I)+1.0E-30 )*LOADFACTOR
+       ! g/m3                = g/m3                + gP/m2/s       * s   * 1/m
+     ENDDO
+# endif
+!L3 End if-def or put it separate subroutine ---------------!
+
+
+#    if defined (ONE_D_MODEL)
+     DO I=M,M
+#    else
+     DO I=1,M
+  if(dbg_set(dbg_sbr)) write(ipt,*)&
+       & i 
+
+#    endif
+       DO K=1,KBM1                              !3D TO 1D FIELD
+  if(dbg_set(dbg_sbr)) write(ipt,*)&
+       & k
+
+         DO J=1,NNN
+            BIO_N(K,J)=BIO_ALL(I,K,J+INN-1)
+         END DO
+  if(dbg_set(dbg_sbr)) write(ipt,*)&
+       & "N" 
+
+         DO J=1,NNP
+            BIO_P(K,J)=BIO_ALL(I,K,J+INP-1)
+         END DO
+  if(dbg_set(dbg_sbr)) write(ipt,*)&
+       & "P"
+
+         DO J=1,NNZ
+            BIO_Z(K,J)=BIO_ALL(I,K,J+INZ-1)
+         END DO
+  if(dbg_set(dbg_sbr)) write(ipt,*)&
+       & "Z"
+
+        DO J=1,NNM
+            BIO_DOM(K,J)=BIO_ALL(I,K,J+INM-1)
+         END DO
+  if(dbg_set(dbg_sbr)) write(ipt,*)&
+       & "DOM"
+
+        DO J=1,NNB
+            BIO_B(K,J)=BIO_ALL(I,K,J+INB-1)
+         END DO
+  if(dbg_set(dbg_sbr)) write(ipt,*)&
+       & "B"
+
+  if(dbg_set(dbg_sbr)) write(ipt,*)&
+       & "NND"
+  if(dbg_set(dbg_sbr)) write(ipt,*)&
+       & NND 
+  if(dbg_set(dbg_sbr)) write(ipt,*)&
+       & "IND"
+  if(dbg_set(dbg_sbr)) write(ipt,*)&
+       & IND
+  if(dbg_set(dbg_sbr)) write(ipt,*)&
+       & "BIO_D(1,1)"
+  if(dbg_set(dbg_sbr)) write(ipt,*)&
+       & BIO_D(1,1) 
+ 
+
+        DO J=1,NND
+            BIO_D(K,J)=BIO_ALL(I,K,J+IND-1)
+         END DO
+  if(dbg_set(dbg_sbr)) write(ipt,*)&
+       & "D"
+
+        DELTA_D(K)=DZ(I,K)*D(I)                   !LAYER THICKNESS
+         DELTA_Z(K)=DZZ(I,K)*D(I)                  !DISTANCE BETWEEN LAYERS
+         DEPTH_Z(K)=Z(I,K)*D(I)                    !LAYER CENTER DEPTH
+         IRRAD0=-SWRAD(I)*PARFRAC*SPRO/RAMP      !PAR FRACTION
+         L_NH4N=30._SPP                          !NITRIFICATION USE	 
+         !if(SWRAD(I).ne.0) write(6,*) "IRRAD0,PARFRAC,SPRO,RAMP,SWRAD(1)",IRRAD0,PARFRAC,SPRO,RAMP,SWRAD(1)
+ 
+  if(dbg_set(dbg_sbr)) write(ipt,*)&
+       & "before T_BIO"
+        T_BIO(K)=T1(I,K)
+       END DO                                    !K=1,KB
+
+
+       T_STEP=DTI
+       CALL ZOOPLANKTON
+       CALL PHYTOPLANKTON
+       CALL BACTERIA
+       CALL DETRITUS
+       CALL DOM
+       CALL NUTRIENT
+
+
+
+        DO K=1,KBM1                                !1D TO 3D FIELD
+          DO J=1,NNN
+             BIO_ALL(I,K,J+INN-1)=BIO_N(K,J)
+          END DO
+          DO J=1,NNP
+             BIO_ALL(I,K,J+INP-1)=BIO_P(K,J)
+          END DO
+          DO J=1,NNZ
+             BIO_ALL(I,K,J+INZ-1)=BIO_Z(K,J)
+          END DO
+          DO J=1,NNM
+             BIO_ALL(I,K,J+INM-1)=BIO_DOM(K,J)
+          END DO
+          DO J=1,NNB
+             BIO_ALL(I,K,J+INB-1)=BIO_B(K,J)
+          END DO
+          DO J=1,NND
+             BIO_ALL(I,K,J+IND-1)=BIO_D(K,J)
+          END DO
+        END DO 
+
+      KM_BIO(:)=KH(I,:)
+      BIO_VAR(1:KBV,1:NTT)=BIO_ALL(I,1:KBV,1:NTT)
+      CALL BIO_MIXING 
+
+      BIO_ALL(I,1:KBV,1:NTT)=BIO_VAR(1:KBV,1:NTT)
+      END DO !I=1,M 
+#    if !defined (ONE_D_MODEL)
+#    if defined (MULTIPROCESSOR)
+       IF(PAR)CALL BIO_EXCHANGE
+#    endif
+      CALL BIO_ADV
+#  if defined(MULTIPROCESSOR)
+      IF(PAR)THEN
+        DO J=1,NTT
+         CALL NODE_MATCH(1,NBN,BN_MLT,BN_LOC,BNC,MT,KB,MYID,NPROCS,BIO_F(:,:,J))
+        END DO
+        CALL BIO_EXCHANGE
+      END IF  
+#    endif
+      CALL BIO_BCOND
+      BIO_ALL=BIO_F                                   !UPDATE
+#    endif
+!    end if defined 1D
+!mdr WHERE (BIO_ALL < 0.001) BIO_ALL=0.001
+      WHERE (BIO_ALL < 0.0) BIO_ALL=0.0 !mdr
+      WHERE (BIO_ALL > 20.0) BIO_ALL=20.0 !mdr, limit concentrations 
+
+  if(dbg_set(dbg_sbr)) write(ipt,*)&
+       & "End: BIO_3D1D"
+!      IF(MOD(IINT-1,CDF_INT)==0) CALL BIO_OUT_NETCDF
+
+
+END SUBROUTINE BIO_3D1D
+
+!=============================================================================!
+   SUBROUTINE BIO_ADV  
+!=============================================================================!
+!                                                                             !
+!   This subroutine is used to calculate the horizontal advection and         !
+!   and diffusion terms for the state variables of the adjustable biomodel    !
+!=============================================================================!
+
+   USE ALL_VARS
+   USE BCS
+   USE MOD_OBCS
+   USE MOD_PAR   
+   USE MOD_WD
+   USE MOD_SPHERICAL
+# if defined (SEMI_IMPLICIT)
+  USE MOD_SEMI_IMPLICIT, ONLY : IFCETA 
+# endif
+
+   IMPLICIT NONE
+
+   REAL(SP), DIMENSION(0:MT,KB,ntt)  :: XFLUX,RF,XFLUX_ADV
+   REAL(SP), DIMENSION(M)           :: PUPX,PUPY,PVPX,PVPY
+   REAL(SP), DIMENSION(M)           :: PFPX,PFPY,PFPXD,PFPYD,VISCOFF
+   REAL(SP), DIMENSION(3*(NT),KBM1) :: DTIJ
+   REAL(SP), DIMENSION(3*(NT),KBM1) :: UVN
+   REAL(SP) :: FFD,FF1   !,X11,Y11,X22,Y22,X33,Y33,TMP1,TMP2,XI,YI
+   REAL(SP) :: DXA,DYA,DXB,DYB,FIJ1,FIJ2,UN
+   REAL(SP) :: TXX,TYY,FXX,FYY,VISCOF,EXFLUX,TEMP
+   REAL(SP) :: FACT,FM1
+   REAL(SP) :: TT,TTIME,STPOINT
+   INTEGER  :: I,I1,I2,IA,IB,J,J1,J2,JTMP,K,JJ,N1
+   REAL(SP) :: WQM1MIN, WQM1MAX, WQM2MIN, WQM2MAX
+
+   REAL(SP), ALLOCATABLE :: DBIODIS(:,:,:)  !!BIOLOGICAL VARIABLES DISCHARGE DATA
+!   REAL(SP), ALLOCATABLE :: BIODIS(:,:)     !!BIOLOGICAL VARIABLES AT CURRENT TIME
+
+!!$# if defined (SPHERICAL)
+!!$   REAL(SP) :: ty,txpi,typi
+!!$   REAL(DP) :: XTMP,XTMP1
+!!$   REAL(DP) :: X1_DP,Y1_DP,X2_DP,Y2_DP,XII,YII
+!!$   REAL(DP) :: X11_TMP,Y11_TMP,X33_TMP,Y33_TMP
+!!$# endif
+
+#  if defined (SEMI_IMPLICIT)
+   REAL(SP) :: UN1
+   REAL(SP), DIMENSION(3*(NT),KBM1) :: UVN1
+   REAL(SP), DIMENSION(3*(NT),KBM1) :: DTIJ1
+#  endif
+#  if defined (MPDATA)
+   REAL(SP) :: WQMMIN,WQMMAX,XXXX
+   REAL(SP), DIMENSION(0:MT,KB)     :: WQM_S    !! temporary salinity in modified upwind
+   REAL(SP), DIMENSION(0:MT,KB)     :: WQM_SF   !! temporary salinity in modified upwind
+   REAL(SP), DIMENSION(0:MT,KB)     :: WWWS     
+   REAL(SP), DIMENSION(0:MT,KB)     :: WWWSF   
+   REAL(SP), DIMENSION(0:MT)        :: DTWWWS  
+   REAL(SP), DIMENSION(0:MT,KB)     :: ZZZFLUX !! temporary total flux in corrected part
+   REAL(SP), DIMENSION(0:MT,KB)     :: BETA    !! temporary beta coefficient in corrected part
+   REAL(SP), DIMENSION(0:MT,KB)     :: BETAIN  !! temporary beta coefficient in corrected part
+   REAL(SP), DIMENSION(0:MT,KB)     :: BETAOUT !! temporary beta coefficient in corrected part
+   REAL(SP), DIMENSION(0:MT,KB)     :: BIO_FRESH    !! for source term
+
+   INTEGER ITERA, NTERA
+#  endif
+
+!------------------------------------------------------------------------------
+  SELECT CASE(HORIZONTAL_MIXING_TYPE)
+  CASE ('closure')
+     FACT = 1.0_SP
+     FM1  = 0.0_SP
+  CASE('constant')
+     FACT = 0.0_SP
+     FM1  = 1.0_SP
+  CASE DEFAULT
+     CALL FATAL_ERROR("UNKNOW HORIZONTAL MIXING TYPE:",&
+          & TRIM(HORIZONTAL_MIXING_TYPE) )
+  END SELECT
+
+!
+!--Initialize Fluxes-----------------------------------------------------------
+!
+   XFLUX = 0.0_SP
+   XFLUX_ADV = 0.0_SP
+!
+!--Loop Over Control Volume Sub-Edges And Calculate Normal Velocity------------
+!
+!!#  if !defined (WET_DRY)
+   DO I=1,NCV
+     I1=NTRG(I)
+!     DTIJ(I)=DT1(I1)
+     DO K=1,KBM1
+       DTIJ(I,K) = DT1(I1)*DZ1(I1,K)
+       UVN(I,K)=V(I1,K)*DLTXE(I) - U(I1,K)*DLTYE(I) 
+#      if defined (SEMI_IMPLICIT)
+       DTIJ1(I,K) = D1(I1)*DZ1(I1,K)
+       UVN1(I,K) = VF(I1,K)*DLTXE(I) - UF(I1,K)*DLTYE(I)
+#      endif
+     END DO
+   END DO
+!!#  else
+!!   DO I=1,NCV
+!!     I1=NTRG(I)
+!!!     DTIJ(I)=DT1(I1)
+!!     DO K=1,KBM1
+!!       DTIJ(I,K) = DT1(I1)*DZ1(I1,K)
+!!       UVN(I,K) = VS(I1,K)*DLTXE(I) - US(I1,K)*DLTYE(I)
+!!#      if defined (SEMI_IMPLICIT)
+!!       DTIJ1(I,K) = D1(I1)*DZ1(I1,K)
+!!       UVN1(I,K) = VF(I1,K)*DLTXE(I) - UF(I1,K)*DLTYE(I)
+!!#      endif
+!!     END DO
+!!   END DO
+!!#  endif
+
+!!$   TTIME=THOUR
+
+   RF = 0.0_SP
+
+!--Calculate the Advection and Horizontal Diffusion Terms----------------------
+
+   DO N1=1,NTT
+     DO K=1,KBM1
+       PFPX  = 0.0_SP
+       PFPY  = 0.0_SP
+       PFPXD = 0.0_SP
+       PFPYD = 0.0_SP
+
+       DO I=1,M
+         DO J=1,NTSN(I)-1
+           I1=NBSN(I,J)
+           I2=NBSN(I,J+1)
+
+#    if defined (WET_DRY)
+         IF(ISWETN(I1) == 0 .AND. ISWETN(I2) == 1)THEN
+          FFD=0.5_SP*(BIO_ALL(I,K,N1)+BIO_ALL(I2,K,N1)           &
+	      -BIO_MEAN(I,K,N1)-BIO_MEAN(I2,K,N1))
+          FF1=0.5_SP*(BIO_ALL(I,K,N1)+BIO_ALL(I2,K,N1))
+	 ELSE IF(ISWETN(I1) == 1 .AND. ISWETN(I2) == 0)THEN
+          FFD=0.5_SP*(BIO_ALL(I1,K,N1)+BIO_ALL(I,K,N1)           &
+	      -BIO_MEAN(I1,K,N1)-BIO_MEAN(I,K,N1))
+          FF1=0.5_SP*(BIO_ALL(I1,K,N1)+BIO_ALL(I,K,N1))
+	 ELSE IF(ISWETN(I1) == 0 .AND. ISWETN(I2) == 0)THEN
+          FFD=BIO_ALL(I,K,N1)-BIO_MEAN(I,K,N1)
+          FF1=BIO_ALL(I,K,N1)
+	 ELSE
+          FFD=0.5_SP*(BIO_ALL(I1,K,N1)+BIO_ALL(I2,K,N1)          &
+	      -BIO_MEAN(I1,K,N1)-BIO_MEAN(I2,K,N1))
+          FF1=0.5_SP*(BIO_ALL(I1,K,N1)+BIO_ALL(I2,K,N1))
+	 END IF 
+#    else	 
+           FFD=0.5_SP*(BIO_ALL(I1,K,N1)+BIO_ALL(I2,K,N1)          &
+               -BIO_MEAN(I1,K,N1)-BIO_MEAN(I2,K,N1))
+           FF1=0.5_SP*(BIO_ALL(I1,K,N1)+BIO_ALL(I2,K,N1))
+#    endif
+
+           PFPX(I)=PFPX(I)+FF1*DLTYTRIE(I,J)
+           PFPY(I)=PFPY(I)+FF1*DLTXTRIE(I,J)
+           PFPXD(I)=PFPXD(I)+FFD*DLTYTRIE(I,J)
+           PFPYD(I)=PFPYD(I)+FFD*DLTXTRIE(I,J)
+         END DO
+         PFPX(I)=PFPX(I)/ART2(I)
+         PFPY(I)=PFPY(I)/ART2(I)
+         PFPXD(I)=PFPXD(I)/ART2(I)
+         PFPYD(I)=PFPYD(I)/ART2(I)
+       END DO
+
+      IF(K == KBM1)THEN
+        DO I=1,M
+          PFPXB(I) = PFPX(I)
+          PFPYB(I) = PFPY(I)
+        END DO
+      END IF
+
+
+       DO I=1,M
+         VISCOFF(I)=VISCOFH(I,K)  !CALCULATED IN viscofh.F
+       END DO
+
+       DO I=1,NCV_I
+         IA=NIEC(I,1)
+         IB=NIEC(I,2)
+
+!         FIJ1=BIO_ALL(IA,K,N1)+DXA*PFPX(IA)+DYA*PFPY(IA)
+!         FIJ2=BIO_ALL(IB,K,N1)+DXB*PFPX(IB)+DYB*PFPY(IB)
+         FIJ1=BIO_ALL(IA,K,N1)+DLTXNCVE(I,1)*PFPX(IA)+DLTYNCVE(I,1)*PFPY(IA)
+         FIJ2=BIO_ALL(IB,K,N1)+DLTXNCVE(I,2)*PFPX(IB)+DLTYNCVE(I,2)*PFPY(IB)
+
+         WQM1MIN=MINVAL(BIO_ALL(NBSN(IA,1:NTSN(IA)-1),K,N1))
+         WQM1MIN=MIN(WQM1MIN, BIO_ALL(IA,K,N1))
+         WQM1MAX=MAXVAL(BIO_ALL(NBSN(IA,1:NTSN(IA)-1),K,N1))
+         WQM1MAX=MAX(WQM1MAX, BIO_ALL(IA,K,N1))
+         WQM2MIN=MINVAL(BIO_ALL(NBSN(IB,1:NTSN(IB)-1),K,N1))
+         WQM2MIN=MIN(WQM2MIN, BIO_ALL(IB,K,N1))
+         WQM2MAX=MAXVAL(BIO_ALL(NBSN(IB,1:NTSN(IB)-1),K,N1))
+         WQM2MAX=MAX(WQM2MAX, BIO_ALL(IB,K,N1))
+         IF(FIJ1 < WQM1MIN) FIJ1=WQM1MIN
+         IF(FIJ1 > WQM1MAX) FIJ1=WQM1MAX
+         IF(FIJ2 < WQM2MIN) FIJ2=WQM2MIN
+         IF(FIJ2 > WQM2MAX) FIJ2=WQM2MAX
+
+         UN=UVN(I,K)
+#        if defined (SEMI_IMPLICIT)
+         UN1=UVN1(I,K)
+#        endif
+  
+!         VISCOF=HORCON*(FACT*(VISCOFF(IA)+VISCOFF(IB))*0.5_SP + FM1)
+        ! David moved HPRNU and added HVC
+        VISCOF=(FACT*0.5_SP*(VISCOFF(IA)*NN_HVC(IA)+VISCOFF(IB)*NN_HVC(IB)) + FM1*0.5_SP*(NN_HVC(IA)+NN_HVC(IB)))
+
+         TXX=0.5_SP*(PFPXD(IA)+PFPXD(IB))*VISCOF
+         TYY=0.5_SP*(PFPYD(IA)+PFPYD(IB))*VISCOF
+
+         FXX=-DTIJ(I,K)*TXX*DLTYE(I)
+         FYY= DTIJ(I,K)*TYY*DLTXE(I)
+
+#        if !defined (SEMI_IMPLICIT)
+         EXFLUX=-UN*DTIJ(I,K)*                           &
+                ((1.0_SP+SIGN(1.0_SP,UN))*FIJ2+          &
+                 (1.0_SP-SIGN(1.0_SP,UN))*FIJ1)*0.5_SP   &
+                +FXX+FYY
+#        else
+         EXFLUX=-UN*DTIJ(I,K)* &
+            ((1.0_SP+SIGN(1.0_SP,UN))*FIJ2+(1.0_SP-SIGN(1.0_SP,UN))*FIJ1)*0.5_SP
+         EXFLUX=(1.0_SP-IFCETA)*EXFLUX+IFCETA*(-UN1*DTIJ1(I,K)*((1.0_SP+SIGN(1.0_SP,UN1))*FIJ2+  &
+            (1.0_SP-SIGN(1.0_SP,UN1))*FIJ1)*0.5_SP)+FXX+FYY
+#        endif
+ 
+         XFLUX(IA,K,N1)=XFLUX(IA,K,N1)+EXFLUX
+         XFLUX(IB,K,N1)=XFLUX(IB,K,N1)-EXFLUX
+
+       XFLUX_ADV(IA,K,N1)=XFLUX_ADV(IA,K,N1)+(EXFLUX-FXX-FYY)
+       XFLUX_ADV(IB,K,N1)=XFLUX_ADV(IB,K,N1)-(EXFLUX-FXX-FYY)
+
+       END DO !to M
+
+#    if defined (SPHERICAL)
+!     CALL ADV_T_XY(XFLUX(:,:,N1),XFLUX_ADV(:,:,N1),PTPX,PTPY,PTPXD,PTPYD,VISCOFF,K)
+#    endif
+
+     END DO !to KBM1
+   END DO !to nnt
+
+!
+!-Accumulate Fluxes at Boundary Nodes
+!
+# if defined (MULTIPROCESSOR)
+      DO N1=1,NTT
+!      IF(PAR)CALL NODE_MATCH(0,NBN,BN_MLT,BN_LOC,BNC,MT,KB,MYID,NPROCS,       &
+!                            XFLUX(:,:,I))    
+   IF(PAR)CALL NODE_MATCH(0,NBN,BN_MLT,BN_LOC,BNC,MT,KB,MYID,NPROCS,       &
+                            XFLUX(:,:,N1),XFLUX_ADV(:,:,N1))
+      END DO
+# endif
+
+!#  if !defined (MPDATA)
+   DO N1=1,NTT
+     DO K=1,KBM1
+        IF(IOBCN > 0) THEN
+          DO I=1,IOBCN
+            I1=I_OBC_N(I)
+            XFLUX_OBCB(I,K,N1)=XFLUX_ADV(I1,K,N1)
+          END DO
+        END IF
+      END DO
+    END DO
+!# endif
+
+
+!#  if !defined (MPDATA)
+   DO N1=1,ntt
+#  if !defined (MPDATA)
+!
+!--Calculate the Vertical Terms------------------------------------------------
+!
+     DO K=1,KBM1
+       DO I=1,M
+#      if defined (WET_DRY)
+       IF(ISWETN(I)*ISWETNT(I) == 1) THEN
+#      endif
+         IF(K == 1) THEN  !Is there any violation ?
+           TEMP=-WTS(I,K+1)*(BIO_ALL(I,K,N1)*DZ(I,K+1)+BIO_ALL(I,K+1,N1)*DZ(I,K))/   &
+	         (DZ(I,K)+DZ(I,K+1))
+         ELSE IF(K == KBM1) THEN
+           TEMP=WTS(I,K)*(BIO_ALL(I,K,N1)*DZ(I,K-1)+BIO_ALL(I,K-1,N1)*DZ(I,K))/      &
+	         (DZ(I,K)+DZ(I,K-1))
+         ELSE
+           TEMP=WTS(I,K)*(BIO_ALL(I,K,N1)*DZ(I,K-1)+BIO_ALL(I,K-1,N1)*DZ(I,K))/      &
+	         (DZ(I,K)+DZ(I,K-1))-  &
+                WTS(I,K+1)*(BIO_ALL(I,K,N1)*DZ(I,K+1)+BIO_ALL(I,K+1,N1)*DZ(I,K))/    &
+		 (DZ(I,K)+DZ(I,K+1))
+         END IF
+
+!
+!--Total Fluxes ---------------------------------------------------------------
+!
+         IF(ISONB(I) == 2) THEN
+           XFLUX(I,K,N1)=TEMP*ART1(I)
+         ELSE
+           XFLUX(I,K,N1)=XFLUX(I,K,N1)+TEMP*ART1(I)
+         END IF
+#    if defined (WET_DRY)
+       END IF
+#    endif
+       END DO  !i=1,M
+     END DO    !k=1,kbm1
+
+!--Set Boundary Conditions-For Fresh Water Flux--------------------------------!
+!
+     IF(RIVER_TS_SETTING == 'calculated') THEN
+       IF(RIVER_INFLOW_LOCATION == 'node') THEN
+         IF(NUMQBC > 0) THEN
+           DO J=1,NUMQBC
+             JJ=INODEQ(J)
+             STPOINT=BIODIS(J,N1)
+             DO K=1,KBM1
+               XFLUX(JJ,K,N1)=XFLUX(JJ,K,N1) - QDIS(J)*VQDIST(J,K)*STPOINT
+             END DO
+           END DO
+         END IF
+       ELSE IF(RIVER_INFLOW_LOCATION == 'edge') THEN
+         IF(NUMQBC > 0) THEN
+           DO J=1,NUMQBC
+             J1=N_ICELLQ(J,1)
+             J2=N_ICELLQ(J,2)
+             STPOINT=BIODIS(J,N1) !!ASK LIU SHOULD THIS BE STPOINT1(J1)/STPOINT2(J2)
+             DO K=1,KBM1
+               XFLUX(J1,K,N1)=XFLUX(J1,K,N1)-QDIS(J)*RDISQ(J,1)*VQDIST(J,K)*STPOINT
+               XFLUX(J2,K,N1)=XFLUX(J2,K,N1)-QDIS(J)*RDISQ(J,2)*VQDIST(J,K)*STPOINT
+             END DO
+           END DO
+         END IF
+       END IF
+     END IF
+
+#  else
+!--------------------------------------------------------------------------------
+!   S. HU
+!   Using smolarkiewicz, P. K; A fully multidimensional positive definite advection
+!   TEMPport algorithm with small implicit diffusion, Journal of Computational
+!   Physics, 54, 325-362, 1984
+!-----------------------------------------------------------------        
+
+	BIO_FRESH=BIO_ALL(:,:,N1)
+
+   IF(RIVER TS_SETTING == 'calculated') THEN
+     IF(RIVER_INFLOW_LOCATION == 'node') THEN
+       IF(NUMQBC > 0) THEN
+         DO J=1,NUMQBC
+           JJ=INODEQ(J)
+           STPOINT=BIODIS(J)
+           DO K=1,KBM1
+!	    S1_FRESH(JJ,K)=SDIS(J)   !NEED TO CHANGE FROM S TO BIO
+            XFLUX(JJ,K,N1)=XFLUX(JJ,K,N1) - QDIS(J)*VQDIST(J,K)*STPOINT
+           END DO
+         END DO
+       END IF
+     ELSE IF(RIVER_INFLOW_LOCATION == 'edge') THEN
+       IF(NUMQBC > 0) THEN
+         DO J=1,NUMQBC
+           J1=N_ICELLQ(J,1)
+           J2=N_ICELLQ(J,2)
+           STPOINT=BIODIS(J) !!ASK LIU SHOULD THIS BE STPOINT1(J1)/STPOINT2(J2)
+           DO K=1,KBM1
+!             S1_FRESH(J1,K)=SDIS(J)  !NEED BIO CONCENTRATION
+!             S1_FRESH(J1,K)=SDIS(J)
+             XFLUX(J1,K,N1)=XFLUX(J1,K,N1)-QDIS(J)*RDISQ(J,1)*VQDIST(J,K)*STPOINT
+             XFLUX(J2,K,N1)=XFLUX(J2,K,N1)-QDIS(J)*RDISQ(J,2)*VQDIST(J,K)*STPOINT
+           END DO
+         END DO
+       END IF
+     END IF
+   END IF
+!
+
+! The horizontal term of advection is neglected here
+   DO K=1,KBM1
+     DO I=1,M
+       IF(ISONB(I) == 2) THEN
+         XFLUX(I,K,N1)=0.
+       ENDIF
+     END DO
+   END DO
+
+! Initialize variables of MPDATA
+   WQM_S=0._SP
+   WQM_SF=0._SP
+   WWWS=0._SP
+   WWWSF=0._SP
+   DTWWWS=0._SP
+   ZZZFLUX=0._SP
+   BETA=0._SP
+   BETAIN=0._SP
+   BETAOUT=0._SP
+
+!!   first loop for vertical upwind
+!!   flux including horizontal and vertical upwind
+   DO K=1,KBM1
+     DO I=1,M
+#    if defined (WET_DRY)
+       IF(ISWETN(I)*ISWETNT(I) == 1) THEN
+#    endif
+         IF(K == 1) THEN
+           TEMP = -(WTS(I,K+1)-ABS(WTS(I,K+1)))*BIO_ALL(I,K,N1)   &
+                  -(WTS(I,K+1)+ABS(WTS(I,K+1)))*BIO_ALL(I,K+1,N1) &
+                  +(WTS(I,K)+ABS(WTS(I,K)))*BIO_ALL(I,K,N1)    
+         ELSE IF(K == KBM1) THEN
+           TEMP = +(WTS(I,K)-ABS(WTS(I,K)))*BIO_ALL(I,K-1,N1)     &
+                  +(WTS(I,K)+ABS(WTS(I,K)))*BIO_ALL(I,K,N1)
+         ELSE
+           TEMP = -(WTS(I,K+1)-ABS(WTS(I,K+1)))*BIO_ALL(I,K,N1)   &
+                  -(WTS(I,K+1)+ABS(WTS(I,K+1)))*BIO_ALL(I,K+1,N1) &
+                  +(WTS(I,K)-ABS(WTS(I,K)))*BIO_ALL(I,K-1,N1)     &
+                  +(WTS(I,K)+ABS(WTS(I,K)))*BIO_ALL(I,K,N1)
+         END IF
+         TEMP = 0.5_SP*TEMP 
+
+         IF(K /= 1)THEN
+           WQMMAX = MAXVAL(BIO_ALL(NBSN(I,1:NTSN(I)),K,N1))
+           WQMMIN = MINVAL(BIO_ALL(NBSN(I,1:NTSN(I)),K,N1))
+!           WQMMAX = MAX(WQMMAX,BIO_ALL(I,K+1,N1),BIO_ALL(I,K-1,N1),BIO_FRESH(I,K,N1))
+!           WQMMIN = MIN(WQMMIN,BIO_ALL(I,K+1,N1),BIO_ALL(I,K-1,N1),BIO_FRESH(I,K,N1))
+           WQMMAX = MAX(WQMMAX,BIO_ALL(I,K+1,N1),BIO_ALL(I,K-1,N1),BIO_FRESH(I,K))
+           WQMMIN = MIN(WQMMIN,BIO_ALL(I,K+1,N1),BIO_ALL(I,K-1,N1),BIO_FRESH(I,K))
+         ELSE
+           WQMMAX = MAXVAL(BIO_ALL(NBSN(I,1:NTSN(I)),K,N1))
+           WQMMIN = MINVAL(BIO_ALL(NBSN(I,1:NTSN(I)),K,N1))
+!           WQMMAX = MAX(WQMMAX,BIO_ALL(I,K+1,N1),BIO_FRESH(I,K,N1))
+!           WQMMIN = MIN(WQMMIN,BIO_ALL(I,K+1,N1),BIO_FRESH(I,K,N1))
+           WQMMAX = MAX(WQMMAX,BIO_ALL(I,K+1,N1),BIO_FRESH(I,K))
+           WQMMIN = MIN(WQMMIN,BIO_ALL(I,K+1,N1),BIO_FRESH(I,K))
+         END IF
+
+         ZZZFLUX(I,K) = TEMP*(DTI/DT(I))/DZ(I,K) + XFLUX(I,K,N1)/ART1(I)*(DTI/DT(I))/DZ(I,K) 
+         XXXX = ZZZFLUX(I,K)*DT(I)/DTFA(I)+BIO_ALL(I,K,N1)-BIO_ALL(I,K,N1)*DT(I)/DTFA(I) 
+
+         BETA(I,K)=0.5*(1.-SIGN(1.,XXXX)) * (WQMMAX-BIO_ALL(I,K,N1))/(ABS(XXXX)+1.E-10) &
+                  +0.5*(1.-SIGN(1.,-XXXX)) * (BIO_ALL(I,K,N1)-WQMMIN)/(ABS(XXXX)+1.E-10)
+
+         WQM_SF(I,K)=BIO_ALL(I,K,N1)-MIN(1.,BETA(I,K))*XXXX
+
+#    if defined (WET_DRY)
+       END IF
+#    endif
+     END DO
+   END DO  !! SIGMA LOOP
+
+!----------------------------------------------------------------------------------------
+   NTERA = 4
+   DO ITERA=1,NTERA   !! Smolaricizw Loop 
+     IF(ITERA == 1)THEN
+       WWWSF  = WTS
+       WQM_S   = WQM_SF
+       DTWWWS = DT
+     ELSE
+       WWWSF  = WWWS
+       WQM_S   = WQM_SF
+       DTWWWS = DTFA
+     END IF
+     DO K=2,KBM1
+       DO I=1,M
+         TEMP=ABS(WWWSF(I,K))-DTI*(WWWSF(I,K))*(WWWSF(I,K))/DZ(I,K)/DTWWWS(I)
+         WWWS(I,K)=TEMP*(WQM_S(I,K-1)-WQM_S(I,K))/(ABS(WQM_S(I,K-1))+ABS(WQM_S(I,K))+1.E-14)
+
+         IF(TEMP < 0.0_SP .OR. WQM_S(I,K) == 0.0_SP)THEN 
+           WWWS(I,K)=0. 
+         END IF
+       END DO 
+     END DO
+
+     DO I=1,M
+       WWWS(I,1)=0.
+     END DO
+
+     DO I=1,M
+       WQMMAX = MAXVAL(BIO_ALL(NBSN(I,1:NTSN(I)),1,N1))
+       WQMMIN = MINVAL(BIO_ALL(NBSN(I,1:NTSN(I)),1,N1))
+       WQMMAX = MAX(WQMMAX,BIO_ALL(I,2,N1),BIO_ALL(I,1,N1),BIO_FRESH(I,1))
+       WQMMIN = MIN(WQMMIN,BIO_ALL(I,2,N1),BIO_ALL(I,1,N1),BIO_FRESH(I,1))
+ 
+       TEMP=0.5*((WWWS(I,2)+ABS(WWWS(I,2)))*WQM_S(I,2))*(DTI/DTFA(I))/DZ(I,1)
+       BETAIN(I,1)=(WQMMAX-WQM_S(I,1))/(TEMP+1.E-10)
+
+       TEMP=0.5*((WWWS(I,1)+ABS(WWWS(I,1)))*WQM_S(I,1)-        &
+	           (WWWS(I,2)-ABS(WWWS(I,2)))*WQM_S(I,1))*(DTI/DTFA(I))/DZ(I,1)
+       BETAOUT(I,1)=(WQM_S(I,1)-WQMMIN)/(TEMP+1.E-10)
+
+       WWWSF(I,1)=0.5*MIN(1.,BETAOUT(I,1))*(WWWS(I,1)+ABS(WWWS(I,1))) + &
+                    0.5*MIN(1.,BETAIN(I,1))*(WWWS(I,1)-ABS(WWWS(I,1)))
+     END DO
+
+     DO K=2,KBM1
+       DO I=1,M
+         WQMMAX = MAXVAL(BIO_ALL(NBSN(I,1:NTSN(I)),K,N1))
+         WQMMIN = MINVAL(BIO_ALL(NBSN(I,1:NTSN(I)),K,N1))
+         WQMMAX = MAX(WQMMAX,BIO_ALL(I,K+1,N1),BIO_ALL(I,K-1,N1),BIO_FRESH(I,K))
+         WQMMIN = MIN(WQMMIN,BIO_ALL(I,K+1,N1),BIO_ALL(I,K-1,N1),BIO_FRESH(I,K))
+
+         TEMP=0.5*((WWWS(I,K+1)+ABS(WWWS(I,K+1)))*WQM_S(I,K+1)-  &
+	           (WWWS(I,K)-ABS(WWWS(I,K)))*WQM_S(I,K-1))*(DTI/DTFA(I))/DZ(I,K)
+         BETAIN(I,K)=(WQMMAX-WQM_S(I,K))/(TEMP+1.E-10)
+
+         TEMP=0.5*((WWWS(I,K)+ABS(WWWS(I,K)))*WQM_S(I,K)-        &
+	           (WWWS(I,K+1)-ABS(WWWS(I,K+1)))*WQM_S(I,K))*(DTI/DTFA(I))/DZ(I,K)
+         BETAOUT(I,K)=(WQM_S(I,K)-WQMMIN)/(TEMP+1.E-10)
+
+         WWWSF(I,K)=0.5*MIN(1.,BETAIN(I,K-1),BETAOUT(I,K))*(WWWS(I,K)+ABS(WWWS(I,K))) + &
+                    0.5*MIN(1.,BETAIN(I,K),BETAOUT(I,K-1))*(WWWS(I,K)-ABS(WWWS(I,K)))
+       END DO
+     END DO
+
+     WWWS=WWWSF 
+
+     DO K=1,KBM1
+       DO I=1,M
+#      if defined (WET_DRY)
+         IF(ISWETN(I)*ISWETNT(I) == 1) THEN
+#      endif
+           IF(K == 1) THEN
+             TEMP = -(WWWS(I,K+1)-ABS(WWWS(I,K+1)))*WQM_S(I,K)   &
+                    -(WWWS(I,K+1)+ABS(WWWS(I,K+1)))*WQM_S(I,K+1) &
+                    +(WWWS(I,K)+ABS(WWWS(I,K)))*WQM_S(I,K)
+           ELSE IF(K == KBM1) THEN
+             TEMP = +(WWWS(I,K)-ABS(WWWS(I,K)))*WQM_S(I,K-1)     &
+                    +(WWWS(I,K)+ABS(WWWS(I,K)))*WQM_S(I,K)
+           ELSE
+             TEMP = -(WWWS(I,K+1)-ABS(WWWS(I,K+1)))*WQM_S(I,K)   &
+                    -(WWWS(I,K+1)+ABS(WWWS(I,K+1)))*WQM_S(I,K+1) &
+                    +(WWWS(I,K)-ABS(WWWS(I,K)))*WQM_S(I,K-1)     &
+                    +(WWWS(I,K)+ABS(WWWS(I,K)))*WQM_S(I,K)
+           END IF
+           TEMP = 0.5_SP*TEMP
+           WQM_SF(I,K)=(WQM_S(I,K)-TEMP*(DTI/DTFA(I))/DZ(I,K)) 
+#      if defined (WET_DRY)
+         END IF
+#      endif
+       END DO
+     END DO  !! SIGMA LOOP
+   END DO  !! Smolarvizw Loop
+!--------------------------------------------------------------------------
+! End of smolarkiewicz upwind loop
+!--------------------------------------------------------------------------
+#  endif
+
+!--Update Variables--------------------------------
+!
+
+#    if defined (WET_DRY)
+     DO I = 1,M
+       IF(ISWETN(I)*ISWETNT(I) == 1 )THEN
+         DO K = 1, KBM1
+       XFLUX(I,K,N1) = XFLUX(I,K,N1) - RF(I,K,N1)*ART1(I)     !/DZ(K)
+#        if !defined (MPDATA) 
+           BIO_F(I,K,N1)=(BIO_ALL(I,K,N1)-XFLUX(I,K,N1)/ART1(I)*(DTI/(DT(I)*DZ(I,K))))*   &
+                         (DT(I)/D(I)) 
+#        else
+           BIO_F(I,K,N1)=WQM_SF(I,K)
+#    endif  		 			 
+         END DO 
+       ELSE
+         DO K=1,KBM1
+           BIO_F(I,K,N1)=BIO_ALL(I,K,N1)
+         END DO
+       END IF
+     END DO
+#    else
+     DO I = 1,M
+         DO K = 1, KBM1
+       XFLUX(I,K,N1) = XFLUX(I,K,N1) - RF(I,K,N1)*ART1(I)     !/DZ(K)
+#        if !defined (MPDATA) 
+           BIO_F(I,K,N1)=(BIO_ALL(I,K,N1)-XFLUX(I,K,N1)/ART1(I)*(DTI/(DT(I)*DZ(I,K))))*   &
+                         (DT(I)/D(I)) 
+#        else
+           BIO_F(I,K,N1)=WQM_SF(I,K)
+#        endif  		 			 
+         END DO 
+       END DO	 
+#    endif
+   END DO !do N1=1,ntt
+   RETURN
+   END SUBROUTINE BIO_ADV
+
+
+
+   SUBROUTINE BIO_BCOND
+!==============================================================================|
+!   Set Boundary Conditions for BioGen                                         |
+!==============================================================================|
+
+!------------------------------------------------------------------------------|
+   USE ALL_VARS
+   USE BCS
+   USE MOD_OBCS
+   IMPLICIT NONE
+   REAL(SP) :: T2D,T2D_NEXT,T2D_OBC,XFLUX2D,TMP,RAMP_BIO
+   INTEGER  :: I,J,K,J1,J11,J22,NCON2,N1
+!   REAL(SP), ALLOCATABLE :: WDIS(:,:)     !!FRESH WATER QUALITY AT CURRENT TIME
+   REAL(SP) ::WQMMAX,WQMMIN
+   CHARACTER(LEN=80) RIVER_TS_SETTING_TMP
+
+!   ALLOCATE(WDIS(NUMQBC,ntt))     ;WDIS      = ZERO
+!------------------------------------------------------------------------------|
+
+
+!
+!--SET CONDITIONS FOR FRESH WATER INFLOW---------------------------------------|
+!
+   IF(RIVER_TS_SETTING == 'specified') THEN
+     IF(NUMQBC > 0) THEN
+       IF(RIVER_INFLOW_LOCATION == 'node') THEN
+         DO I=1,NUMQBC
+           J11=INODEQ(I)
+           DO K=1,KBM1
+             DO N1=1,NTT
+               BIO_F(J11,K,N1) = BIODIS(I,N1)
+             END DO
+           END DO
+         END DO
+       ELSE IF(RIVER_INFLOW_LOCATION == 'edge') THEN
+         DO I=1,NUMQBC
+           J11=N_ICELLQ(I,1)
+           J22=N_ICELLQ(I,2)
+           DO K=1,KBM1
+             DO N1=1,NTT
+               BIO_F(J11,K,N1)=BIODIS(I,N1)
+               BIO_F(J22,K,N1)=BIODIS(I,N1)
+             END DO
+           END DO
+         END DO
+       END IF
+     END IF
+   END IF
+
+       
+   IF(IOBCN > 0) THEN
+!
+!  SET CONDITIONS ON OUTER BOUNDARY
+!
+     IF(OBC_BIO_NUDGING) CALL UPDATE_OBC_BIO(IntTime,BIO_OBC)
+     RAMP_BIO = TANH(FLOAT(IINT)/FLOAT(IRAMP+1))
+     DO N1=1,NTT
+       DO I=1,IOBCN
+         J=I_OBC_N(I)
+         J1=NEXT_OBC(I)
+         T2D=0.0_SP
+         T2D_NEXT=0.0_SP
+         XFLUX2D=0.0_SP
+         DO K=1,KBM1
+           T2D=T2D+BIO_ALL(J,K,N1)*DZ(J,K)
+           T2D_NEXT=T2D_NEXT+BIO_F(J1,K,N1)*DZ(J1,K)
+           XFLUX2D=XFLUX2D+XFLUX_OBCB(I,K,N1)           !*DZ(K)
+         END DO
+         IF(UARD_OBCN(I) > 0.0_SP) THEN
+           TMP=XFLUX2D+T2D*UARD_OBCN(I)
+           T2D_OBC=(T2D*DT(J)-TMP*DTI/ART1(J))/D(J)
+           DO K=1,KBM1
+!            BIO_ALL(J,K,N1)=T2D_OBC+(BIO_ALL(J1,K,N1)-T2D_NEXT)
+            BIO_F(J,K,N1)=T2D_OBC+(BIO_F(J1,K,N1)-T2D_NEXT)
+           END DO
+
+           DO K=1,KBM1
+             WQMMAX = MAXVAL(BIO_ALL(NBSN(J,1:NTSN(J)),K,N1))
+             WQMMIN = MINVAL(BIO_ALL(NBSN(J,1:NTSN(J)),K,N1))
+         
+             IF(K == 1)THEN
+               WQMMAX = MAX(WQMMAX,(BIO_ALL(J,K,N1)*DZ(J,K+1)+BIO_ALL(J,K+1,N1)*DZ(J,K))/  &
+	               (DZ(J,K)+DZ(J,K+1)))
+               WQMMIN = MIN(WQMMIN,(BIO_ALL(J,K,N1)*DZ(J,K+1)+BIO_ALL(J,K+1,N1)*DZ(J,K))/  &
+	               (DZ(J,K)+DZ(J,K+1)))
+             ELSE IF(K == KBM1)THEN
+               WQMMAX = MAX(WQMMAX,(BIO_ALL(J,K,N1)*DZ(J,K-1)+BIO_ALL(J,K-1,N1)*DZ(J,K))/  &
+	               (DZ(J,K)+DZ(J,K-1)))
+               WQMMIN = MIN(WQMMIN,(BIO_ALL(J,K,N1)*DZ(J,K-1)+BIO_ALL(J,K-1,N1)*DZ(J,K))/  &
+	               (DZ(J,K)+DZ(J,K-1)))
+             ELSE
+               WQMMAX = MAX(WQMMAX,(BIO_ALL(J,K,N1)*DZ(J,K-1)+BIO_ALL(J,K-1,N1)*DZ(J,K))/  &
+	               (DZ(J,K)+DZ(J,K-1)), &
+                       (BIO_ALL(J,K,N1)*DZ(J,K+1)+BIO_ALL(J,K+1,N1)*DZ(J,K))/  &
+		       (DZ(J,K)+DZ(J,K+1)))
+               WQMMIN = MIN(WQMMIN,(BIO_ALL(J,K,N1)*DZ(J,K-1)+BIO_ALL(J,K-1,N1)*DZ(J,K))/  &
+	               (DZ(J,K)+DZ(J,K-1)), &
+                       (BIO_ALL(J,K,N1)*DZ(J,K+1)+BIO_ALL(J,K+1,N1)*DZ(J,K))/  &
+		       (DZ(J,K)+DZ(J,K+1)))
+             END IF
+ 
+             IF(WQMMIN-BIO_F(J,K,N1) > 0.0_SP)BIO_F(J,K,N1) = WQMMIN
+             IF(BIO_F(J,K,N1)-WQMMAX > 0.0_SP)BIO_F(J,K,N1) = WQMMAX
+
+           END DO
+
+         ELSE
+
+           IF(OBC_BIO_NUDGING) THEN
+             DO K=1,KBM1
+               BIO_F(J,K,N1) = BIO_ALL(J,K,N1) - OBC_BIO_NUDGING_TIMESCALE*RAMP_BIO*(BIO_ALL(J,K,N1)&
+                      &-BIO_OBC(I,K,N1))
+             END DO
+           ELSE
+             DO K=1,KBM1
+               BIO_F(J,K,N1)=BIO_ALL(J,K,N1)
+             END DO
+           END IF
+         END IF
+       END DO
+     END DO !!OUTER LOOP OVER BIO-VARIABLES
+
+   END IF
+
+!
+!--SET BOUNDARY CONDITIONS-----------------------------------------------------|
+!
+       BIO_ALL(0,:,:)=ZERO
+   RETURN
+   END SUBROUTINE BIO_BCOND
+!==============================================================================!
+
+SUBROUTINE BIO_EXCHANGE
+!==============================================================================!
+!     PERFORM DATA EXCHANGE FOR the Generalized biological model               |
+!==============================================================================!
+#if defined (MULTIPROCESSOR)
+!     USE ALL_VARS
+     USE MOD_PAR
+     USE LIMS
+     USE CONTROL
+     IMPLICIT NONE
+     INTEGER :: I3
+     REAL(SP),ALLOCATABLE :: BIO_ALL_T(:,:),BIO_MEAN_T(:,:),BIO_F_T(:,:)
+     DO I3=1,NTT
+      ALLOCATE(BIO_ALL_T(0:MT,KB))
+      ALLOCATE(BIO_MEAN_T(0:MT,KB))
+      ALLOCATE(BIO_F_T(0:MT,KB))
+      
+      BIO_ALL_T(:,:)  = BIO_ALL(:,:,I3)
+      BIO_MEAN_T(:,:) = BIO_MEAN(:,:,I3)
+      BIO_F_T(:,:)    = BIO_F(:,:,I3)
+      
+      IF(PAR) CALL AEXCHANGE(NC,MYID,NPROCS,BIO_ALL_T)
+      IF(PAR) CALL AEXCHANGE(NC,MYID,NPROCS,BIO_MEAN_T)
+      IF(PAR) CALL AEXCHANGE(NC,MYID,NPROCS,BIO_F_T)
+
+      BIO_ALL(:,:,I3)  = BIO_ALL_T(:,:)  
+      BIO_MEAN(:,:,I3) = BIO_MEAN_T(:,:) 
+      BIO_F(:,:,I3)    = BIO_F_T(:,:)    
+      
+      DEALLOCATE(BIO_ALL_T,BIO_MEAN_T,BIO_F_T)
+     END DO 
+   RETURN
+#endif
+  END SUBROUTINE BIO_EXCHANGE
+
+
+
+   SUBROUTINE BIO_INITIAL
+!=============================================================================!
+! THS PROGRAM INITIALIZES THE 3D BIOLOGICAL FIELD FOR THE GENERALIZED         !
+! BIOLOGICAL MODEL: BIO_ALL(I,K,Nl),N1=1,NTT),AND MEAN VALUES BIO_MEAN        !
+! EACH BIOLOGICAL STATE VARIABLE HAS AN INDEPENDENT INITIAL CONDITION FILE    !
+! PLACED IN INPDIR. THEY SHOULD BE NAME AS "NUTRIENT_INI_1", "NUTRIENT_INI_2",!
+! "PHYTOPLANKTON_INI_1", "ZOOPLANKTON_INI_1", "BACTERIA_INI_1", 'DETRITUS_    !
+! INI_1", "DOM_INI_1" AND SO FORTH. THREE TYPES OF INITIAL CONDITIONS WERE    !
+! IMPLEMENTED: (1) 'CONSTANT': A SINGLE VALUE; (2) 'LINEAR':WITH AT LEAST TWO !
+! PAIRS OF VALUES WITH DEPTH. VARIABLE VALUES WILL BE LINEARLY INTERPOLATED   !
+! BETWEEN THE VALUES GIVEN), (3) "DATA": OBSERVATION DATA SHOULD BE INTER-    !
+! POLATED ONTO THE GRID POINTS AT STANDARD LEVELS. VARIABLE VALUES WILL BE    !
+! INTERPOLATED AT EACH GRID POINT FROM THE DATA. THE TYPE OF INITIAL CONDI-   !
+! TION SHOULD BE PUT ON THE FIRST LINE OF EACH INITIAL FILE                   !
+!=============================================================================!
+  USE MOD_NCTOOLS
+      IMPLICIT NONE
+      INTEGER :: I,J,K,LL,N_DATA
+      CHARACTER(LEN=80) :: ISTR
+      CHARACTER(LEN=2)  :: BIO_NUMBER
+      CHARACTER(LEN=10) :: INI_TYPE
+      REAL(SP), DIMENSION(KBM1)    :: ZM           !GRID DEPTH
+      REAL(SP), DIMENSION(500)     :: DEPTH_STD    !STANDARD DEPTH OF DATA
+      REAL(SP), DIMENSION(500)     :: DATA_BIO     !STANDARD DATA FOR LINEAR INTERPOLATION
+      REAL(SP), DIMENSION(KB)      :: DATA_INT     !INTERPOLDATED VALUES
+
+      REAL(SP), ALLOCATABLE,DIMENSION(:,:) :: TEMPB        !TEMPERAL FOR DATA INPUT
+      REAL(SP), ALLOCATABLE,DIMENSION(:,:) :: DATA_3D      !3D OBSERVATION DATA
+
+      ALLOCATE(BIO_ALL(0:MT,KB,NTT))    ; BIO_ALL     =  0.001_SP
+      ALLOCATE(BIO_F(0:MT,KB,NTT))      ; BIO_F       =  0.001_SP
+      ALLOCATE(BIO_MEAN(0:MT,KB,NTT))   ; BIO_MEAN    =  0.001_SP
+      ALLOCATE(XFLUX_OBCB(0:MT,KB,NTT)) ; XFLUX_OBCB  =  0.0_SP
+      ALLOCATE(BIO_MEANN(0:NT,KB,NTT))  ; BIO_MEANN   =  0.001_SP
+      ALLOCATE(BIO_VAR_MEAN(0:MT,KB,NTT)) ; BIO_VAR_MEAN   =  0.0_SP
+
+!*********      NUTRIENT INITIAL CONDITIONS   *************
+      DO LL=1,NNN
+
+        if(LL.lt.10) then
+          WRITE(BIO_NUMBER,'(I1)')LL
+        else
+          WRITE(BIO_NUMBER,'(I2)')LL
+        endif
+
+        OPEN(1,FILE=TRIM(INPUT_DIR)//'/NUTRIENT_INI_'//TRIM(BIO_NUMBER)//'.dat',STATUS='old')
+        READ(1,*)INI_TYPE
+        IF (TRIM(INI_TYPE).EQ.'CONSTANT') THEN
+          READ(1,*)DATA_BIO(1)
+          DO I=1,M
+            DO K=1,KB
+              BIO_ALL(I,K,LL+INN-1)=DATA_BIO(1)
+            END DO
+          END DO
+        END IF
+        IF (TRIM(INI_TYPE).EQ.'LINEAR') THEN
+          N_DATA=1
+ 11       READ(1,*,END=12)DEPTH_STD(N_DATA),DATA_BIO(N_DATA)
+          N_DATA=N_DATA+1
+          GO TO 11
+ 12       N_DATA=N_DATA-1
+          DO I=1,M
+            DO K= 1,KBM1
+              ZM(K) =ZZ(I,K)*(D(I)+EL(I))
+            END DO
+            CALL SINTER_BIO(DEPTH_STD,DATA_BIO,ZM,DATA_INT,N_DATA,KBM1)
+            DO K =1,KBM1
+              BIO_ALL(I,K,LL+INN-1) = DATA_INT(K)
+            END DO
+          END DO
+        END IF !LINEAR
+
+        IF (TRIM(INI_TYPE).EQ.'DATA') THEN
+	  ALLOCATE(TEMPB(MGL,KBM1))
+	  ALLOCATE(DATA_3D(M,KBM1))
+
+          DO I=1,MGL 
+            READ(1,*) (TEMPB(I,K), K=1,KBM1)
+          END DO
+
+          IF(SERIAL)THEN
+            DATA_3D = TEMPB
+          END IF
+
+#   if defined (MULTIPROCESSOR)
+          IF(PAR)THEN
+            DO I=1,M
+              DATA_3D(I,1:KBM1) = TEMPB(NGID(I),1:KBM1)
+            END DO
+          END IF
+#    endif
+          DO I=1,M
+            DO K=1,KBM1
+              DATA_BIO(K)=DATA_3D(I,K)
+            END DO
+            DO K= 1,KBM1
+              ZM(K) =ZZ(I,K)*D(I)+EL(I)
+            END DO
+               DATA_INT(1:KBM1) = DATA_BIO(1:KBM1)
+            DO K =1,KBM1
+              BIO_ALL(I,K,LL+INN-1) = DATA_INT(K)
+            END DO
+          END DO
+        END IF !DATA
+      END DO !L=1,NNN; NUTRIENT INITIALIZATION
+!*********      PHYTOPLANKTON INITIAL CONDITIONS   *************
+      DO LL=1,NNP
+        WRITE(BIO_NUMBER,'(I1.1)')LL
+        OPEN(1,FILE=TRIM(INPUT_DIR)//'/PHYTOPLANKTON_INI_'//TRIM(BIO_NUMBER)//'.dat',STATUS='old')
+        READ(1,*)INI_TYPE
+        IF (TRIM(INI_TYPE).EQ.'CONSTANT') THEN
+          READ(1,*)DATA_BIO(1)
+          DO I=1,M
+            DO K=1,KB
+              BIO_ALL(I,K,LL+INP-1)=DATA_BIO(1)
+            END DO
+          END DO
+        END IF
+        IF (TRIM(INI_TYPE).EQ.'LINEAR') THEN
+          N_DATA=1
+ 21       READ(1,*,END=22)DEPTH_STD(N_DATA),DATA_BIO(N_DATA)
+          N_DATA=N_DATA+1
+          GO TO 21
+ 22       N_DATA=N_DATA-1
+          DO I=1,M
+            DO K= 1,KBM1
+              ZM(K) =ZZ(I,K)*D(I)+EL(I)
+            END DO
+            CALL SINTER_BIO(DEPTH_STD,DATA_BIO,ZM,DATA_INT,N_DATA,KBM1)
+            DO K =1,KBM1
+              BIO_ALL(I,K,LL+INP-1) = DATA_INT(K)
+            END DO
+          END DO
+        END IF !LINEAR
+
+        IF (TRIM(INI_TYPE).EQ.'DATA') THEN
+          KBM1=KBM1 !mdr
+	  ALLOCATE(TEMPB(MGL,KBM1))
+	  ALLOCATE(DATA_3D(M,KBM1))
+          DO I=1,MGL 
+            READ(1,*) (TEMPB(I,K), K=1,KBM1)
+          END DO
+
+          IF(SERIAL)THEN
+            DATA_3D = TEMPB
+          END IF
+
+#   if defined (MULTIPROCESSOR)
+          IF(PAR)THEN
+            DO I=1,M
+              DATA_3D(I,1:KBM1) = TEMPB(NGID(I),1:KBM1)
+            END DO
+          END IF
+#    endif
+          DO I=1,M
+            DO K=1,KBM1
+              DATA_BIO(K)=DATA_3D(I,K)
+            END DO
+            DO K= 1,KBM1
+              ZM(K) =ZZ(I,K)*D(I)+EL(I)
+            END DO
+               DATA_INT(1:KBM1) = DATA_BIO(1:KBM1)
+            DO K =1,KBM1
+              BIO_ALL(I,K,LL+INP-1) = DATA_INT(K)
+            END DO
+          END DO
+        END IF !DATA
+      END DO !L=1,NNP; PHYTOPLANKTON INITIALIZATION
+
+!*********      ZOOPLANKTON INITIAL CONDITIONS   *************
+      DO LL=1,NNZ
+        WRITE(BIO_NUMBER,'(I1.1)')LL
+        OPEN(1,FILE=TRIM(INPUT_DIR)//'/ZOOPLANKTON_INI_'//TRIM(BIO_NUMBER)//'.dat',STATUS='old')
+        READ(1,*)INI_TYPE
+        IF (TRIM(INI_TYPE).EQ.'CONSTANT') THEN
+          READ(1,*)DATA_BIO(1)
+          DO I=1,M
+            DO K=1,KB
+              BIO_ALL(I,K,LL+INZ-1)=DATA_BIO(1)
+            END DO
+          END DO
+        END IF
+        IF (TRIM(INI_TYPE).EQ.'LINEAR') THEN
+          N_DATA=1
+ 31       READ(1,*,END=32)DEPTH_STD(N_DATA),DATA_BIO(N_DATA)
+          N_DATA=N_DATA+1
+          GO TO 31
+ 32       N_DATA=N_DATA-1
+          DO I=1,M
+            DO K= 1,KBM1
+              ZM(K) =ZZ(I,K)*D(I)+EL(I)
+            END DO
+            CALL SINTER_BIO(DEPTH_STD,DATA_BIO,ZM,DATA_INT,N_DATA,KBM1)
+            DO K =1,KBM1
+              BIO_ALL(I,K,LL+INZ-1) = DATA_INT(K)
+            END DO
+          END DO
+        END IF !LINEAR
+
+        IF (TRIM(INI_TYPE).EQ.'DATA') THEN
+          KBM1=KBM1 !mdr
+	  ALLOCATE(TEMPB(MGL,KBM1))
+	  ALLOCATE(DATA_3D(M,KBM1))
+          DO I=1,MGL 
+            READ(1,*) (TEMPB(I,K), K=1,KBM1)
+          END DO
+
+          IF(SERIAL)THEN
+            DATA_3D = TEMPB
+          END IF
+
+#   if defined (MULTIPROCESSOR)
+          IF(PAR)THEN
+            DO I=1,M
+              DATA_3D(I,1:KBM1) = TEMPB(NGID(I),1:KBM1)
+            END DO
+          END IF
+#    endif
+          DO I=1,M
+            DO K=1,KBM1
+              DATA_BIO(K)=DATA_3D(I,K)
+            END DO
+            DO K= 1,KBM1
+              ZM(K) =ZZ(I,K)*D(I)+EL(I)
+            END DO
+               DATA_INT(1:KBM1) = DATA_BIO(1:KBM1)
+            DO K =1,KBM1
+              BIO_ALL(I,K,LL+INZ-1) = DATA_INT(K)
+            END DO
+          END DO
+        END IF !DATA
+      END DO !L=1,NNZ; ZOOPLANKTON INITIALIZATION
+
+
+!*********      BACTERIA INITIAL CONDITIONS   *************
+      DO LL=1,NNB
+        WRITE(BIO_NUMBER,'(I1.1)')LL
+        OPEN(1,FILE=TRIM(INPUT_DIR)//'/BACTERIA_INI_'//TRIM(BIO_NUMBER)//'.dat',STATUS='old')
+        READ(1,*)INI_TYPE
+        IF (TRIM(INI_TYPE).EQ.'CONSTANT') THEN
+          READ(1,*)DATA_BIO(1)
+          DO I=1,M
+            DO K=1,KB
+              BIO_ALL(I,K,LL+INB-1)=DATA_BIO(1)
+            END DO
+          END DO
+        END IF
+        IF (TRIM(INI_TYPE).EQ.'LINEAR') THEN
+          N_DATA=1
+ 41       READ(1,*,END=42)DEPTH_STD(N_DATA),DATA_BIO(N_DATA)
+          N_DATA=N_DATA+1
+          GO TO 41
+ 42       N_DATA=N_DATA-1
+          DO I=1,M
+            DO K= 1,KBM1
+              ZM(K) =ZZ(I,K)*D(I)+EL(I)
+            END DO
+            CALL SINTER_BIO(DEPTH_STD,DATA_BIO,ZM,DATA_INT,N_DATA,KBM1)
+            DO K =1,KBM1
+              BIO_ALL(I,K,LL+INB-1) = DATA_INT(K)
+            END DO
+          END DO
+        END IF !LINEAR
+
+        IF (TRIM(INI_TYPE).EQ.'DATA') THEN
+          KBM1=KBM1 !mdr
+	  ALLOCATE(TEMPB(MGL,KBM1))
+	  ALLOCATE(DATA_3D(M,KBM1))
+          DO I=1,MGL 
+            READ(1,*) (TEMPB(I,K), K=1,KBM1)
+          END DO
+
+          IF(SERIAL)THEN
+            DATA_3D = TEMPB
+          END IF
+
+#   if defined (MULTIPROCESSOR)
+          IF(PAR)THEN
+            DO I=1,M
+              DATA_3D(I,1:KBM1) = TEMPB(NGID(I),1:KBM1)
+            END DO
+          END IF
+#    endif
+          DO I=1,M
+            DO K=1,KBM1
+              DATA_BIO(K)=DATA_3D(I,K)
+            END DO
+            DO K= 1,KBM1
+              ZM(K) =ZZ(I,K)*D(I)+EL(I)
+            END DO
+               DATA_INT(1:KBM1) = DATA_BIO(1:KBM1)
+            DO K =1,KBM1
+              BIO_ALL(I,K,LL+INB-1) = DATA_INT(K)
+            END DO
+          END DO
+        END IF !DATA
+      END DO !L=1,NNB; BACTERIA INITIALIZATION
+
+
+!*********      DOM INITIAL CONDITIONS   *************
+      DO LL=1,NNM
+        WRITE(BIO_NUMBER,'(I1.1)')LL
+        OPEN(1,FILE=TRIM(INPUT_DIR)//'/DOM_INI_'//TRIM(BIO_NUMBER)//'.dat',STATUS='old')
+        READ(1,*)INI_TYPE
+        IF (TRIM(INI_TYPE).EQ.'CONSTANT') THEN
+          READ(1,*)DATA_BIO(1)
+          DO I=1,M
+            DO K=1,KB
+              BIO_ALL(I,K,LL+INM-1)=DATA_BIO(1)
+            END DO
+          END DO
+        END IF
+        IF (TRIM(INI_TYPE).EQ.'LINEAR') THEN
+          N_DATA=1
+ 51       READ(1,*,END=52)DEPTH_STD(N_DATA),DATA_BIO(N_DATA)
+          N_DATA=N_DATA+1
+          GO TO 51
+ 52       N_DATA=N_DATA-1
+          DO I=1,M
+            DO K= 1,KBM1
+              ZM(K) =ZZ(I,K)*D(I)+EL(I)
+            END DO
+            CALL SINTER_BIO(DEPTH_STD,DATA_BIO,ZM,DATA_INT,N_DATA,KBM1)
+            DO K =1,KBM1
+              BIO_ALL(I,K,LL+INM-1) = DATA_INT(K)
+            END DO
+          END DO
+        END IF !LINEAR
+
+        IF (TRIM(INI_TYPE).EQ.'DATA') THEN
+          KBM1=KBM1 !mdr
+	  ALLOCATE(TEMPB(MGL,KBM1))
+	  ALLOCATE(DATA_3D(M,KBM1))
+          DO I=1,MGL 
+            READ(1,*) (TEMPB(I,K), K=1,KBM1)
+          END DO
+
+          IF(SERIAL)THEN
+            DATA_3D = TEMPB
+          END IF
+
+#   if defined (MULTIPROCESSOR)
+          IF(PAR)THEN
+            DO I=1,M
+              DATA_3D(I,1:KBM1) = TEMPB(NGID(I),1:KBM1)
+            END DO
+          END IF
+#    endif
+          DO I=1,M
+            DO K=1,KBM1
+              DATA_BIO(K)=DATA_3D(I,K)
+            END DO
+            DO K= 1,KBM1
+              ZM(K) =ZZ(I,K)*D(I)+EL(I)
+            END DO
+               DATA_INT(1:KBM1) = DATA_BIO(1:KBM1)
+            DO K =1,KBM1
+              BIO_ALL(I,K,LL+INM-1) = DATA_INT(K)
+            END DO
+          END DO
+        END IF !DATA
+      END DO !L=1,NNM; DOM INITIALIZATION
+
+IF(DBG_SET(DBG_SBR)) WRITE(IPT,*)"Start DETRITIS INITIAL CONDITIONS"
+!*********      DETRITUS INITIAL CONDITIONS   *************
+      DO LL=1,NND
+        WRITE(BIO_NUMBER,'(I1.1)')LL
+        OPEN(1,FILE=TRIM(INPUT_DIR)//'/DETRITUS_INI_'//TRIM(BIO_NUMBER)//'.dat',STATUS='old')
+        READ(1,*)INI_TYPE
+        IF (TRIM(INI_TYPE).EQ.'CONSTANT') THEN
+          READ(1,*)DATA_BIO(1)
+          DO I=1,M
+            DO K=1,KB
+              BIO_ALL(I,K,LL+IND-1)=DATA_BIO(1)
+            END DO
+          END DO
+        END IF
+        IF (TRIM(INI_TYPE).EQ.'LINEAR') THEN
+          N_DATA=1
+ 61       READ(1,*,END=62)DEPTH_STD(N_DATA),DATA_BIO(N_DATA)
+          N_DATA=N_DATA+1
+          GO TO 61
+ 62       N_DATA=N_DATA-1
+          DO I=1,M
+            DO K= 1,KBM1
+              ZM(K) =ZZ(I,K)*D(I)+EL(I)
+            END DO
+            CALL SINTER_BIO(DEPTH_STD,DATA_BIO,ZM,DATA_INT,N_DATA,KBM1)
+            DO K =1,KBM1
+              BIO_ALL(I,K,LL+IND-1) = DATA_INT(K)
+            END DO
+          END DO
+        END IF !LINEAR
+
+        IF (TRIM(INI_TYPE).EQ.'DATA') THEN
+	  ALLOCATE(TEMPB(MGL,KBM1))
+	  ALLOCATE(DATA_3D(M,KBM1))
+          DO I=1,MGL 
+            READ(1,*) (TEMPB(I,K), K=1,KBM1)
+          END DO
+
+          IF(SERIAL)THEN
+            DATA_3D = TEMPB
+          END IF
+
+#   if defined (MULTIPROCESSOR)
+          IF(PAR)THEN
+            DO I=1,M
+              DATA_3D(I,1:KBM1) = TEMPB(NGID(I),1:KBM1)
+            END DO
+          END IF
+#    endif
+
+          DO I=1,M
+            DO K=1,KBM1
+              DATA_BIO(K)=DATA_3D(I,K)
+            END DO
+            DO K= 1,KBM1
+              ZM(K) =ZZ(I,K)*D(I)+EL(I)
+            END DO
+               DATA_INT(1:KBM1) = DATA_BIO(1:KBM1) 
+            DO K =1,KBM1
+              BIO_ALL(I,K,LL+IND-1) = DATA_INT(K)
+            END DO
+          END DO
+        END IF !DATA
+      END DO !L=1,NND; DETRITUS INITIALIZATION
+
+!mdr      WHERE (BIO_ALL < 0.001) BIO_ALL=0.001
+      BIO_MEAN=BIO_ALL   !3D ASSIGNMENT
+
+#    if defined (MULTIPROCESSOR)
+      IF (PAR) CALL BIO_EXCHANGE
+#    endif
+!!$      CALL BIO_NETCDF_HEADER
+
+
+!L3 Add if-def or put it separate subroutine ---------------!
+#  if defined (Tribs)
+
+! MDR, initialize nutrient loads
+! Nutrient loads will be applied to the BIO_ALL array as a mass/volume/time
+! the loads are input as daily values of kg/s mass flux for a specific tributary
+! node
+! the model will start with the first line of the load input file and update the
+! value each day
+! so make sure the input file starts on the start date of the model
+!  all the load input files should have the same number of tributaries (columns)
+!  and records
+IF(DOLOADS) THEN
+  IF(MSR) PRINT*,'Simulating with nutrient loads'
+  BIO_NUMBER = '1'
+  OPEN(1,FILE=TRIM(INPUT_DIR)//'DETRITUS_TRIB_'//TRIM(BIO_NUMBER)//'.dat',STATUS='old')
+!mdr
+  READ(1,*)NTRIBS ! number of tributary load locations on first line of input file
+  READ(1,*)NLOADRECORDS ! number of daily load records
+
+  ALLOCATE(MLOADGL(1:NTRIBS)); MLOADGL = 0
+  ALLOCATE(MLOADLOCAL(1:NTRIBS)); MLOADLOCAL = 0
+  ALLOCATE(LOADSD1(1:NTRIBS)); LOADSD1 = 0.0
+  ALLOCATE(LOADSN1(1:NTRIBS)); LOADSN1 = 0.0
+  ALLOCATE(LOADARRD1(1:NLOADRECORDS,1:NTRIBS)); LOADARRD1 = 0.0
+  ALLOCATE(LOADARRN1(1:NLOADRECORDS,1:NTRIBS)); LOADARRN1 = 0.0
+
+  READ(1,*)MLOADGL(1:NTRIBS) ! global node locations to apply loads
+
+  DO LOADIND = 1,NLOADRECORDS
+    READ(1,*)LOADARRD1(LOADIND,1:NTRIBS) ! Detritus 1 load in kg/s
+  ENDDO
+  CLOSE(1)
+
+  BIO_NUMBER = '1'
+  OPEN(1,FILE=TRIM(INPUT_DIR)//'NUTRIENT_TRIB_'//TRIM(BIO_NUMBER)//'.dat',STATUS='old')
+!mdr
+  READ(1,*)NTRIBS ! number of tributary load locations on first line of input file
+  READ(1,*)NLOADRECORDS ! number of daily load records
+  READ(1,*)MLOADGL(1:NTRIBS) ! global node locations to apply loads
+
+  DO LOADIND = 1,NLOADRECORDS
+    READ(1,*)LOADARRN1(LOADIND,1:NTRIBS) ! Nutrient 1 load in kg/s
+  ENDDO
+  CLOSE(1)
+
+  LOADIND = 1 ! Current record in the load input arrays
+
+!L3 Use N2CD==P:C(=0.016 in paper) for Detritus, Just convert kg/s to g/s for both Detritus and Nutrient 
+!  LOADSD1(1:NTRIBS) = LOADARRD1(LOADIND,1:NTRIBS)*1000.0/(N2CD +1.0E-30) ! Initialize current load values, convert from kg/s to g/s
+  LOADSD1(1:NTRIBS) = LOADARRD1(LOADIND,1:NTRIBS)*1000.0*N2CD !  Initialize current load values, convert from kg/s to g/s
+  LOADSN1(1:NTRIBS) = LOADARRN1(LOADIND,1:NTRIBS)*1000.0
+
+  IF(SERIAL)THEN
+     MLOADLOCAL = MLOADGL
+     DOLOADSLOCAL = .TRUE.
+  END IF
+
+#   if defined (MULTIPROCESSOR)
+          IF(PAR)THEN
+            DO I=1,M
+            DO J=1,NTRIBS
+              IF(NGID(I) == MLOADGL(J)) THEN
+                DOLOADSLOCAL = .TRUE.
+                MLOADLOCAL(J) = I ! PRINT*,'MYID=',MYID,'J=',J,'MLOADGL(J)=',MLOADGL(J),'MLOADLOCAL(J)=',MLOADLOCAL(J)
+              ENDIF
+            END DO
+            END DO
+          END IF
+#    endif
+
+ENDIF ! end if doloads
+
+# endif
+
+!L3 End if-def or put it separate subroutine ---------------!
+
+
+   RETURN
+END SUBROUTINE BIO_INITIAL
+
+
+SUBROUTINE BIO_HOT_START
+! THIS SUBROUTINE READS IN RESTART BIOLOGICAL DATA FROM THE NETCDF FILE restart_bio.nc  !
+! IT QUERIES THE DIMENSION AND TAKES THE LAST TIME STEP AS THE RESTART DATA.            !
+
+      USE NETCDF  
+
+      IMPLICIT NONE
+      SAVE
+      INTEGER  ::  I,J,K,IERR,NC_FID,N_START,VARID,DIMID,DIMS(3)
+      REAL(SP) ::  TEMPB(MGL,KBM1)
+      CHARACTER(LEN=20) ::  TEMPNAME,time
+      ALLOCATE(BIO_ALL(0:MT,KB,NTT))    ; BIO_ALL     =  0.001_SP
+      ALLOCATE(BIO_F(0:MT,KB,NTT))      ; BIO_F       =  0.001_SP
+      ALLOCATE(BIO_MEAN(00:MT,KB,NTT))  ; BIO_MEAN    =  0.001_SP
+      ALLOCATE(XFLUX_OBCB(0:MT,KB,NTT)) ; XFLUX_OBCB  =  0.0_SP
+      ALLOCATE(BIO_MEANN(0:NT,KB,NTT))  ; BIO_MEANN   =  0.001_SP
+      ALLOCATE(BIO_VAR_MEAN(0:MT,KB,NTT)) ; BIO_VAR_MEAN   =  0.0_SP
+
+!*******************   START EXECUTABLE      *******************!
+
+!      IF(MSR) THEN
+        IERR = NF90_OPEN('restart_bio.nc',NF90_NOWRITE,NC_FID)
+        IF(IERR /=NF90_NOERR)THEN
+           WRITE(*,*)' ERROR IN OPENNING restart_bio.nc '
+           STOP
+        END IF
+!      END IF
+      IERR = NF90_INQ_DIMID(NC_FID,'time',DIMID)   !GET time DIMENSION ID
+      IF(IERR /=NF90_NOERR)THEN
+         WRITE(*,*)' ERROR GETTING time ID: '
+         STOP
+      END IF
+      IERR = NF90_INQUIRE_DIMENSION(NC_FID,DIMID,TEMPNAME,N_START)
+      IF(IERR /=NF90_NOERR)THEN
+         WRITE(*,*)' ERROR GETTING TIME STEPS '
+         STOP
+      END IF
+!**************   DETERMINE START POINT
+      DIMS(1) = 1
+      DIMS(2) = 1
+      DIMS(3) = N_START
+      DO I=1,NTT
+         IERR = nf90_inq_varid(NC_FID,TRIM(BIO_NAME(I,1)),VARID)
+         IF(IERR /=NF90_NOERR)THEN
+           WRITE(*,*)'ERROR GETTING THE ID OF ',TRIM(BIO_NAME(I,1))
+           STOP
+         END IF
+
+         IERR = nf90_get_var(NC_FID,VARID,TEMPB,START=DIMS)
+         IF(IERR /=NF90_NOERR)THEN
+            WRITE(*,*)'ERROR GETTING RESTART DATA OF ',TRIM(BIO_NAME(I,1))
+            STOP
+         END IF
+
+      IF(SERIAL)THEN
+        BIO_ALL(:,:,I)=TEMPB(:,:)
+      END IF
+#   if defined (MULTIPROCESSOR)
+          IF(PAR)THEN
+            DO J=1,M
+              BIO_ALL(J,1:KBM1,I)=TEMPB(NGID(J),1:KBM1)
+            END DO
+          END IF
+#    endif
+      END DO  !DO I=1,NNT
+      BIO_MEAN=BIO_ALL
+#    if defined (MULTIPROCESSOR)
+      IF (PAR) CALL BIO_EXCHANGE
+#    endif
+!      CALL BIO_NETCDF_HEADER
+      IERR=NF90_CLOSE(NC_FID)
+
+END SUBROUTINE BIO_HOT_START
+
+!==============================================================================|
+
+   SUBROUTINE SINTER_BIO(X,A,Y,B,M1,N1)              
+
+!==============================================================================|
+   USE MOD_PREC
+   IMPLICIT NONE
+   INTEGER, INTENT(IN)   :: M1,N1
+   REAL(SP), INTENT(IN)  :: X(M1),A(M1),Y(N1)
+   REAL(SP), INTENT(OUT) :: B(N1) 
+   INTEGER   I,J,NM
+!==============================================================================|
+
+!
+!  EXTRAPOLATION
+!
+   DO I=1,N1
+       IF (Y(I) > X(1 )) B(I) = A(1) + ((A(1)-A(2))/(X(1)-X(2))) * (Y(I)-X(1))
+       IF (Y(I) < X(M1)) B(I) = A(M1)
+   END DO
+
+!
+!  INTERPOLATION
+!
+   NM = M1 - 1
+   DO I=1,N1
+     DO J=1,NM
+        IF (Y(I) <=  X(J) .AND. Y(I) >= X(J+1)) &
+              B(I) = A(J) - (A(J)- A(J+1)) * (X(J)-Y(I)) / (X(J)-X(J+1))
+     END DO
+   END DO
+
+   RETURN
+   END SUBROUTINE SINTER_BIO
+!==============================================================================|
+!
+!=============================================================================!
+!!$   SUBROUTINE NAME_LIST_INITIALIZE_BIO
+!!$   USE CONTROL
+   
+!!$   IMPLICIT NONE
+   
+   !--Parameters in NameList NML_BIOLOGICAL
+!!$   STARTUP_BIO_TYPE = "'constant' 'linear' 'observed' or 'set values'"
+   
+!!$   RETURN
+!!$   END SUBROUTINE NAME_LIST_INITIALIZE_BIO
+!=============================================================================!
+!
+!=============================================================================!   
+!!$   SUBROUTINE NAME_LIST_PRINT_BIO
+!!$   USE CONTROL
+   
+!!$   IMPLICIT NONE
+   
+!!$   write(UNIT=IPT,NML=NML_BIOLOGICAL)
+   
+!!$   RETURN
+!!$   END SUBROUTINE NAME_LIST_PRINT_BIO
+!=============================================================================!   
+   
+
+#    endif
+!    END IF DEFINED BioGen AT THE BEGINNING
+END MODULE MOD_BIO_3D
