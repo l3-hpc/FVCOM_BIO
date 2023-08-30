@@ -6,12 +6,7 @@ subroutine DETRITUS
 !
 !  Define global data.
    USE MOD_1D
-!   USE MOD_NUTRIENT
-!   USE MOD_PHYTOPLANKTON
-!   USE MOD_ZOOPLANKTON
    USE MOD_DETRITUS
-!   USE MOD_BACTERIA
-!   USE MOD_DOM
    
    IMPLICIT NONE
    INTEGER :: I,K,J,I1,I2, N_SINK
@@ -50,7 +45,14 @@ subroutine DETRITUS
           DO K=2,KBV-2
             D_SINK1(K)=1.*W_D1*(DETRITE(K-1,J)-DETRITE(K,J))/DELTA_D(K)
           END DO
-          D_SINK1(KBVM1)=W_D1*(DETRITE(KBVM1-1,J))/DELTA_D(KBVM1) !No sink out
+
+!WM/L3 modification, add flag for sinking
+          if(isink_out.eq.1) then
+           D_SINK1(KBVM1)=W_D1*(DETRITE(KBVM1-1,J)-DETRITE(KBVM1,J))/DELTA_D(KBVM1) !Sink out
+          else
+           D_SINK1(KBVM1)=W_D1*(DETRITE(KBVM1-1,J))/DELTA_D(KBVM1) !No sink out
+          endif
+
           DO K=1,KBVM1
             DETRITE(K,J)=DETRITE(K,J)+D_SINK1(K)
             D_SINK(K,J)=D_SINK(K,J)+D_SINK1(K)
@@ -60,7 +62,6 @@ subroutine DETRITUS
           D_SINK(K,J)=D_SINK(K,J)/T_STEP
         END DO
  10    CONTINUE
-
 
 !*****************   NUTRIENT SOURCES AND SINKS   *******************
       DO 20 J=1,NND

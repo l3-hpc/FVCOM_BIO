@@ -76,17 +76,13 @@
       ALLOCATE (W_D(NND))                ;  W_D         =  0.0_SPP  !DETRITUS SINKING VELOCITY
     
    !Read inputs
-      READ(1,*)  D_0 != 0.00
-      READ(1,*)  W_D ! = 9.2e-7
-       write(6,*) "D_0", D_0 
-       write(6,*) "W_D",W_D
+      READ(1,*)  D_0 != 0.00 Detritus threshold, (units of detritus)
+      READ(1,*)  W_D ! = TP (as DETRITUS) sinking rate, (m s-1)
+      READ(1,*)  ISINK_OUT !1=sink out, 0=no sink out 
+      write(6,*) "D_0", D_0 
+      write(6,*) "W_D",W_D
+      write(6,*) "ISINK_OUT",ISINK_OUT
 
-!      'D_0'         (NND)          mmol C m-3        DETRITUS THRESHOLLD
-!      0.00
-!      'W_D'         (NND)          m s-1             TP (as DETRITUS) SINKING
-!      VELOCITY
-!      9.2e-7                                         !(29 m/y as used by Chapra
-!      and Dolan (2012)
       CLOSE(1)
 
        RETURN

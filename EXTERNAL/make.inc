@@ -37,7 +37,7 @@
 #
 #        CHOOSE YOUR MODEL OPTIONAS - The Def Flags!
 #
-##        CHOOSE A COMPILER FROM THE LIST OR CREATE YOUR OWN
+#        CHOOSE A COMPILER FROM THE LIST OR CREATE YOUR OWN
 #
 #    You can also use the makefile to build and install some of the libraries
 #    used by fvcom. Set the INSTALLDIR and choose the 'LOCAL INSTALL' option
@@ -48,7 +48,7 @@
 #========== TOPDIR ========================================================
 # TOPDIR is the directory in which this make file and the fvcom source reside
 
-TOPDIR = /rsstu/users/l/lllowe/ord/WORK/fvcom
+TOPDIR = /rsstu/users/l/lllowe/LakeErie/FVCOM/source_code
 
 #EXAMPLE
 # TOPDIR = /home/user/cchen/FVCOM_source
@@ -59,8 +59,12 @@ TOPDIR = /rsstu/users/l/lllowe/ord/WORK/fvcom
             INSTALLDIR    = $(TOPDIR)/libs/install
 #===========================================================================
 # PREPROCESSOR OPTIONS FOR CPP
-#            DEF_FLAGS     = -P -C -traditional 
-            DEF_FLAGS     = -P -traditional 
+#            DEF_FLAGS     = -P -C -traditional
+
+#L3 On Henry2, -C makes the preprocessor do something stupid.  If you get CPP
+#L3 errors, maybe you need the -C
+            DEF_FLAGS     = -P -traditional
+
 #===========================================================================
 #
 ####################### MEDM ENVIRONMENT #####################################
@@ -76,8 +80,8 @@ dashL= $(empty) -L
 
 ###########################################################################
 
-# LOCAL INSTAL
-             LIBDIR       =  -L$(INSTALLDIR)/lib -lmpi
+# LOCAL INSTALL
+             LIBDIR       =  -L$(INSTALLDIR)/lib
              INCDIR       =  -I$(INSTALLDIR)/include
 
 
@@ -95,17 +99,14 @@ dashL= $(empty) -L
 #                           SET PATH TO LIBRARIES WITH IOLIBS      
 #                           SET PATH TO INCLUDE FILES (netcdf.mod) WITH IOINCS
 #--------------------------------------------------------------------------
-
-#             IOLIBS       =  -lnetcdf
-#             IOLIBS       =  -lnetcdff -lnetcdf #-lhdf5_hl -lhdf5 -lz -lcurl -lm
+# IOLIBS = -L/usr/local/apps/pnetcdf-1.9.0/intel-18.0/lib -lpnetcdf -L/usr/local/apps/netcdf-4.6.3/intel-18.0/lib -lnetcdff -lnetcdf
+# IOINCS = -I/usr/local/apps/pnetcdf-1.9.0/intel-18.0/include -I/usr/local/apps/netcdf-4.6.3/intel-18.0/include
+             IOLIBS       =  -lnetcdf 
+             IOINCS       =  -I$(INSTALLDIR)/include
 #             IOLIBS       =  -lnetcdf #-L/hosts/mao/usr/medm/install/netcdf/3.6.3/em64t/lib -lnetcdf
-#             IOINCS       =  #-I/hosts/mao/usr/medm/install/netcdf/3.6.3/em64t/include
+#             IOINCS       =  -I/hosts/mao/usr/medm/install/netcdf/3.6.3/em64t/include
 #             IOLIBS       =  -L/usr/local/install/netcdf/gcc_ifort/3.6.2/lib  -lnetcdf
 #             IOINCS       =  -I/usr/local/install/netcdf/gcc_ifort/3.6.2/include
-#              IOLIBS       =  -L/usr/local/apps/netcdf-centos7/4.7.0-intel2018/lib -lnetcdff -lnetcdf
-#              IOINCS       =  -I/usr/local/apps/netcdf-centos7/4.7.0-intel2018/include
-	IOLIBS = -L/usr/local/usrapps/ncdfutil/cmaq-libs/intel2018.4/netcdf/lib -lnetcdff -lnetcdf
-        IOINCS = -I/usr/local/usrapps/ncdfutil/cmaq-libs/intel2018.4/netcdf/include
 #--------------------------------------------------------------------------
 
 
@@ -118,6 +119,7 @@ dashL= $(empty) -L
 #          CODE MUST BE CLEANED (with "make clean") AND
 #          RECOMPILED IF NEW SET OF OPTIONS IS DESIRED
 #--------------------------------------------------------------------------
+
 
 #--------------------------------------------------------------------------
 #        PRECISION          DEFAULT PRECISION: SINGLE                     
@@ -367,12 +369,12 @@ dashL= $(empty) -L
 #       GENERAL BIOLOGICAL MODEL:    UNCOMMENT TO INCLUDE MODEL
 #-------------------------------------------------------------------------- 
             FLAG_25  = -DBioGen
-            FLAG_1025 = -DTribs
 #            FLAG_251 = -DOFFLINE_BIOLOGY
-#            BIOLIB   = -L$(TOPDIR)/GOMDOM_BIO -lbiomodule
-#            BIOINCS  = -I$(TOPDIR)/GOMDOM_BIO
-            BIOLIB   = -L$(TOPDIR)/BIO_TP -lbiomodule
-            BIOINCS  = -I$(TOPDIR)/BIO_TP
+#            BIOLIB   = -L$(TOPDIR)/BIO_source -lbiomodule
+#            BIOINCS  = -I$(TOPDIR)/BIO_source
+#L3 add bio
+	BIOLIB   = -L$(TOPDIR)/BIO_TP -lbiomodule
+	BIOINCS  = -I$(TOPDIR)/BIO_TP
 
 
 #--------------------------------------------------------------------------
@@ -380,20 +382,22 @@ dashL= $(empty) -L
 #--------------------------------------------------------------------------
 
 # NOTE: Must use -DSPHERICAL  and -DHEAT_FLUX ----- this note only for old version v2.7
-#       ICE_EMBEDDING must with SEMI_IMPLICIT
 #            FLAG_26 = -DICE  
+#       ICE_EMBEDDING must with SEMI_IMPLICIT
 #            FLAG_261 = -DICE_EMBEDDING  
+#       ICE_FRESHWATER
+#       This flag adjusts the ice code to work for freshwater systems (Great Lakes) 
+#            FLAG_262 = -DICE_FRESHWATER  
 
 #--------------------------------------------------------------------------
-#         CALCULATE THE NET HEAT FLUX IN MODEL (THREE CHOICES):
-#         1. CALCULATE THE NET HEAT FLUX USING COARE26Z
-#         2. CALCULATE THE NET HEAT FLUX USING COARE26Z for Great Lake
-#         3. CALCULATE THE NET HEAT FLUX USING SOLAR HEATING MODULE                          
+#         CALCULATE THE NET HEAT FLUX IN MODEL (TWO CHOICES):
+#         (IN CHOICE 1, THERE ARE OPTIONS FOR OCEAN WATER OR FRESH WATER)
+#         1. CALCULATE THE NET HEAT FLUX USING COARE26Z OR COARE40VN
+#         2. CALCULATE THE NET HEAT FLUX USING SOLAR HEATING MODULE                          
 #--------------------------------------------------------------------------
 
-            FLAG_27 = -DHEATING_CALCULATED  
-#            FLAG_27 = -DHEATING_CALCULATED_GL  
-#            FLAG_27 = -DHEATING_SOLAR  
+#            FLAG_27 = -DHEATING_CALCULATED  
+            FLAG_27 = -DHEATING_SOLAR  
 
 #--------------------------------------------------------------------------
 #         AIR_PRESSURE FROM SURFACE FORCING                           
@@ -521,8 +525,14 @@ dashL= $(empty) -L
 #--------------------------------------------------------------------------
 #  Intel Compiler Definitions
 #--------------------------------------------------------------------------
-#         CPP      = /usr/bin/cpp
-#         COMPILER = -DIFORT
+         CPP      = /usr/bin/cpp
+         COMPILER = -DIFORT
+
+         FC       = mpiifort
+         CC       = mpiicc
+         CXX      = mpicxx
+         CFLAGS   = -O3 -fp-model precise -g
+
 #         FC       = ifort
 #         CC       = icc
 #         CXX      = icc
@@ -540,19 +550,19 @@ dashL= $(empty) -L
 #--------------------------------------------------------------------------
 #  Intel/MPI Compiler Definitions (SMAST)      
 #--------------------------------------------------------------------------
-         CPP      = /usr/bin/cpp
-         COMPILER = -DIFORT  
-         CC       = mpicc
-         CXX      = mpicxx
-         CFLAGS   = -O3 -fp-model precise
-         FC       = mpif90
-         DEBFLGS  = #-g -debug -traceback -check all
+#         CPP      = /usr/bin/cpp
+#         COMPILER = -DIFORT  
+#         CC       = mpicc
+#         CXX      = mpicxx
+#         CFLAGS   = -O3 
+#         FC       = mpif90
+#         DEBFLGS  = -check all -traceback
 # Use 'OPT = -O0 -g'  for fast compile to test the make 
 # Use 'OPT = -xP' for fast run on em64t (Hydra and Guppy)
 # Use 'OPT = -xN' for fast run on ia32 (Salmon and Minke)
 #         OPT      = -O0 -g
 #         OPT      = -axN -xN
-         OPT      = -O3 -fp-model precise
+#         OPT      = -O3
 
 # Do not set static for use with visit!
 #         VISOPT   = -Wl,--export-dynamic
@@ -623,9 +633,7 @@ dashL= $(empty) -L
    $(FLAG_39) $(FLAG_40) $(FLAG_41) $(FLAG_42) \
    $(FLAG_43) $(FLAG_LAM)\
    $(FLAG_101) $(FLAG_102) $(FLAG_103) $(FLAG_104) $(FLAG_105)\
-   $(FLAG_211) $(FLAG_212) $(FLAG_213) $(FLAG_251) $(FLAG_261)\
-   $(FLAG_1025)
-
+   $(FLAG_211) $(FLAG_212) $(FLAG_213) $(FLAG_251) $(FLAG_261) 
 #--------------------------------------------------------------------------
 #  Libraries           
 #--------------------------------------------------------------------------

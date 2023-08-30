@@ -16,6 +16,7 @@ MODULE MOD_DETRITUS
      REAL(SPP), ALLOCATABLE :: D_0(:)                ! DETRITUS THRESHOLD
      REAL(SPP), ALLOCATABLE :: W_D(:)                ! DETRITUS SINKING VELOCITY
      REAL(SPP)  N2CD                      ! Element ratio in detritus 
+     INTEGER ISINK_OUT
 
 !Used for calculations
      REAL(SPP), ALLOCATABLE :: DETRITE(:,:)          ! DETRITUS CONCENTRATION 

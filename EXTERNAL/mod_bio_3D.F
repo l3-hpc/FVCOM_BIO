@@ -46,12 +46,7 @@ MODULE MOD_BIO_3D
 !   use netcdf
 
    USE MOD_1D
-   USE MOD_PHYTOPLANKTON !,   ONLY: BIO_P,NNP,INP,IRRAD0,PARFRAC
-   USE MOD_ZOOPLANKTON !,     ONLY: BIO_Z,NNZ,INZ
-   USE MOD_BACTERIA !,        ONLY: BIO_B,NNB,INB
    USE MOD_DETRITUS !,        ONLY: BIO_D,NND,IND
-   USE MOD_DOM !,             ONLY: BIO_DOM,NNM,INM
-   USE MOD_NUTRIENT !,        ONLY: BIO_N,NNN,INN
    USE MOD_PARAMETER
 
    IMPLICIT NONE
@@ -85,9 +80,6 @@ SUBROUTINE BIO_3D1D
      IMPLICIT NONE
      SAVE
      INTEGER  :: I,J,K,L
-!L3 add if-def for tribs
-     INTEGER :: II
-!L3 end if-def for tribs
 
      REAL(SP) :: SPCP,ROSEA,SPRO !,BIO_VAR_MEAN(M,KBM1,NTT)
 
@@ -102,55 +94,6 @@ SUBROUTINE BIO_3D1D
   if(dbg_set(dbg_sbr)) write(ipt,*)&
        & "Start: BIO_3D1D, spcp"
 
-!L3 Add if-def or put it separate subroutine ---------------!
-#  if defined (Tribs)
-! Apply nutrient loads
-     IF(DOLOADSLOCAL) THEN
-       ! Update loads daily
-       IF(MODULO(DTI*FLOAT(IINT),86400.0) == 0.0) THEN
-         LOADIND = LOADIND + 1 ! Current record in the load input arrays
-         IF(LOADIND > NLOADRECORDS) THEN
-            LOADIND = NLOADRECORDS
-            IF(MSR) PRINT*,'Load time series exceeded, using last load record'
-         ENDIF
-
-        LOADSD1(1:NTRIBS) = LOADARRD1(LOADIND,1:NTRIBS)*1000.0*N2CD*LOADFACTOR ! Update current load values, convert from kg/s to g/s
-        LOADSN1(1:NTRIBS) = LOADARRN1(LOADIND,1:NTRIBS)*1000.0*LOADFACTOR
-        ! PRINT*,'MYID=',MYID,'Updating load LOADSD1=
-        ! ',LOADSD1,'LOADSN1=',LOADSN1,'LOADFACTOR=',LOADFACTOR
-
-       ENDIF
-
-       ! Apply tributary loads
-       DO I=1,NTRIBS
-         II=MLOADLOCAL(I)
-         IF(II .NE. 0) THEN
-           J=1
-           DO K=1,KBM1
-            ! PRINT*,'LOADS',I,II,MLOADGL(I),BIO_ALL(II,K,J+INN-1),LOADSN1(I)*DTI/(D(II)*ART1(II)+1.0E-30),BIO_ALL(II,K,J+IND-1),LOADSD1(I)*DTI/(D(II)*ART1(II)+1.0E-30)
-             ! Detritus 1 load, add D1 and N1
-             BIO_ALL(II,K,J+IND-1) = BIO_ALL(II,K,J+IND-1) + (LOADSD1(I)+LOADSN1(I))*DTI/(D(II)*ART1(II)+1.0E-30)
-           ENDDO ! K
-         ENDIF
-       ENDDO !NTRIBS
-     ENDIF ! End if DOLOADSLOCAL
-
-     ! Apply average Lake Michigan atmospheric phosphorus load to the surface
-     ! layer
-     !  of 310 metric tons/year = 310*1e6/(57629.98 km2 *1000*1000)/365/24/3600
-     !  = 1.705716e-10 gP/m2/s 
-     ! D.M. Dolan, S.C. Chapra / Journal of Great Lakes Research 38 (2012)
-     ! 730–740, Table 5
-     DO I=1,M
-       J=1
-       K=1
-       BIO_ALL(I,K,J+IND-1) = BIO_ALL(I,K,J+IND-1) + 1.705716E-10 * DTI / (DZ(I,K)*D(I)+1.0E-30 )*LOADFACTOR
-       ! g/m3                = g/m3                + gP/m2/s       * s   * 1/m
-     ENDDO
-# endif
-!L3 End if-def or put it separate subroutine ---------------!
-
-
 #    if defined (ONE_D_MODEL)
      DO I=M,M
 #    else
@@ -163,62 +106,15 @@ SUBROUTINE BIO_3D1D
   if(dbg_set(dbg_sbr)) write(ipt,*)&
        & k
 
-         DO J=1,NNN
-            BIO_N(K,J)=BIO_ALL(I,K,J+INN-1)
+         DO J=1,NND
+            BIO_D(K,J)=BIO_ALL(I,K,J)
          END DO
   if(dbg_set(dbg_sbr)) write(ipt,*)&
-       & "N" 
+       & "D" 
 
-         DO J=1,NNP
-            BIO_P(K,J)=BIO_ALL(I,K,J+INP-1)
-         END DO
-  if(dbg_set(dbg_sbr)) write(ipt,*)&
-       & "P"
-
-         DO J=1,NNZ
-            BIO_Z(K,J)=BIO_ALL(I,K,J+INZ-1)
-         END DO
-  if(dbg_set(dbg_sbr)) write(ipt,*)&
-       & "Z"
-
-        DO J=1,NNM
-            BIO_DOM(K,J)=BIO_ALL(I,K,J+INM-1)
-         END DO
-  if(dbg_set(dbg_sbr)) write(ipt,*)&
-       & "DOM"
-
-        DO J=1,NNB
-            BIO_B(K,J)=BIO_ALL(I,K,J+INB-1)
-         END DO
-  if(dbg_set(dbg_sbr)) write(ipt,*)&
-       & "B"
-
-  if(dbg_set(dbg_sbr)) write(ipt,*)&
-       & "NND"
-  if(dbg_set(dbg_sbr)) write(ipt,*)&
-       & NND 
-  if(dbg_set(dbg_sbr)) write(ipt,*)&
-       & "IND"
-  if(dbg_set(dbg_sbr)) write(ipt,*)&
-       & IND
-  if(dbg_set(dbg_sbr)) write(ipt,*)&
-       & "BIO_D(1,1)"
-  if(dbg_set(dbg_sbr)) write(ipt,*)&
-       & BIO_D(1,1) 
- 
-
-        DO J=1,NND
-            BIO_D(K,J)=BIO_ALL(I,K,J+IND-1)
-         END DO
-  if(dbg_set(dbg_sbr)) write(ipt,*)&
-       & "D"
-
-        DELTA_D(K)=DZ(I,K)*D(I)                   !LAYER THICKNESS
+         DELTA_D(K)=DZ(I,K)*D(I)                   !LAYER THICKNESS
          DELTA_Z(K)=DZZ(I,K)*D(I)                  !DISTANCE BETWEEN LAYERS
          DEPTH_Z(K)=Z(I,K)*D(I)                    !LAYER CENTER DEPTH
-         IRRAD0=-SWRAD(I)*PARFRAC*SPRO/RAMP      !PAR FRACTION
-         L_NH4N=30._SPP                          !NITRIFICATION USE	 
-         !if(SWRAD(I).ne.0) write(6,*) "IRRAD0,PARFRAC,SPRO,RAMP,SWRAD(1)",IRRAD0,PARFRAC,SPRO,RAMP,SWRAD(1)
  
   if(dbg_set(dbg_sbr)) write(ipt,*)&
        & "before T_BIO"
@@ -226,34 +122,13 @@ SUBROUTINE BIO_3D1D
        END DO                                    !K=1,KB
 
 
+!L3 just use 'NND', TP is defined in 'DETRITUS', remove PHYTO, ZOO, etc.
        T_STEP=DTI
-       CALL ZOOPLANKTON
-       CALL PHYTOPLANKTON
-       CALL BACTERIA
        CALL DETRITUS
-       CALL DOM
-       CALL NUTRIENT
-
-
 
         DO K=1,KBM1                                !1D TO 3D FIELD
-          DO J=1,NNN
-             BIO_ALL(I,K,J+INN-1)=BIO_N(K,J)
-          END DO
-          DO J=1,NNP
-             BIO_ALL(I,K,J+INP-1)=BIO_P(K,J)
-          END DO
-          DO J=1,NNZ
-             BIO_ALL(I,K,J+INZ-1)=BIO_Z(K,J)
-          END DO
-          DO J=1,NNM
-             BIO_ALL(I,K,J+INM-1)=BIO_DOM(K,J)
-          END DO
-          DO J=1,NNB
-             BIO_ALL(I,K,J+INB-1)=BIO_B(K,J)
-          END DO
           DO J=1,NND
-             BIO_ALL(I,K,J+IND-1)=BIO_D(K,J)
+             BIO_ALL(I,K,J)=BIO_D(K,J)
           END DO
         END DO 
 
@@ -559,7 +434,7 @@ END SUBROUTINE BIO_3D1D
 
 
 !#  if !defined (MPDATA)
-   DO N1=1,ntt
+   DO N1=1,NTT
 #  if !defined (MPDATA)
 !
 !--Calculate the Vertical Terms------------------------------------------------
@@ -1078,333 +953,6 @@ SUBROUTINE BIO_EXCHANGE
       ALLOCATE(BIO_MEANN(0:NT,KB,NTT))  ; BIO_MEANN   =  0.001_SP
       ALLOCATE(BIO_VAR_MEAN(0:MT,KB,NTT)) ; BIO_VAR_MEAN   =  0.0_SP
 
-!*********      NUTRIENT INITIAL CONDITIONS   *************
-      DO LL=1,NNN
-
-        if(LL.lt.10) then
-          WRITE(BIO_NUMBER,'(I1)')LL
-        else
-          WRITE(BIO_NUMBER,'(I2)')LL
-        endif
-
-        OPEN(1,FILE=TRIM(INPUT_DIR)//'/NUTRIENT_INI_'//TRIM(BIO_NUMBER)//'.dat',STATUS='old')
-        READ(1,*)INI_TYPE
-        IF (TRIM(INI_TYPE).EQ.'CONSTANT') THEN
-          READ(1,*)DATA_BIO(1)
-          DO I=1,M
-            DO K=1,KB
-              BIO_ALL(I,K,LL+INN-1)=DATA_BIO(1)
-            END DO
-          END DO
-        END IF
-        IF (TRIM(INI_TYPE).EQ.'LINEAR') THEN
-          N_DATA=1
- 11       READ(1,*,END=12)DEPTH_STD(N_DATA),DATA_BIO(N_DATA)
-          N_DATA=N_DATA+1
-          GO TO 11
- 12       N_DATA=N_DATA-1
-          DO I=1,M
-            DO K= 1,KBM1
-              ZM(K) =ZZ(I,K)*(D(I)+EL(I))
-            END DO
-            CALL SINTER_BIO(DEPTH_STD,DATA_BIO,ZM,DATA_INT,N_DATA,KBM1)
-            DO K =1,KBM1
-              BIO_ALL(I,K,LL+INN-1) = DATA_INT(K)
-            END DO
-          END DO
-        END IF !LINEAR
-
-        IF (TRIM(INI_TYPE).EQ.'DATA') THEN
-	  ALLOCATE(TEMPB(MGL,KBM1))
-	  ALLOCATE(DATA_3D(M,KBM1))
-
-          DO I=1,MGL 
-            READ(1,*) (TEMPB(I,K), K=1,KBM1)
-          END DO
-
-          IF(SERIAL)THEN
-            DATA_3D = TEMPB
-          END IF
-
-#   if defined (MULTIPROCESSOR)
-          IF(PAR)THEN
-            DO I=1,M
-              DATA_3D(I,1:KBM1) = TEMPB(NGID(I),1:KBM1)
-            END DO
-          END IF
-#    endif
-          DO I=1,M
-            DO K=1,KBM1
-              DATA_BIO(K)=DATA_3D(I,K)
-            END DO
-            DO K= 1,KBM1
-              ZM(K) =ZZ(I,K)*D(I)+EL(I)
-            END DO
-               DATA_INT(1:KBM1) = DATA_BIO(1:KBM1)
-            DO K =1,KBM1
-              BIO_ALL(I,K,LL+INN-1) = DATA_INT(K)
-            END DO
-          END DO
-        END IF !DATA
-      END DO !L=1,NNN; NUTRIENT INITIALIZATION
-!*********      PHYTOPLANKTON INITIAL CONDITIONS   *************
-      DO LL=1,NNP
-        WRITE(BIO_NUMBER,'(I1.1)')LL
-        OPEN(1,FILE=TRIM(INPUT_DIR)//'/PHYTOPLANKTON_INI_'//TRIM(BIO_NUMBER)//'.dat',STATUS='old')
-        READ(1,*)INI_TYPE
-        IF (TRIM(INI_TYPE).EQ.'CONSTANT') THEN
-          READ(1,*)DATA_BIO(1)
-          DO I=1,M
-            DO K=1,KB
-              BIO_ALL(I,K,LL+INP-1)=DATA_BIO(1)
-            END DO
-          END DO
-        END IF
-        IF (TRIM(INI_TYPE).EQ.'LINEAR') THEN
-          N_DATA=1
- 21       READ(1,*,END=22)DEPTH_STD(N_DATA),DATA_BIO(N_DATA)
-          N_DATA=N_DATA+1
-          GO TO 21
- 22       N_DATA=N_DATA-1
-          DO I=1,M
-            DO K= 1,KBM1
-              ZM(K) =ZZ(I,K)*D(I)+EL(I)
-            END DO
-            CALL SINTER_BIO(DEPTH_STD,DATA_BIO,ZM,DATA_INT,N_DATA,KBM1)
-            DO K =1,KBM1
-              BIO_ALL(I,K,LL+INP-1) = DATA_INT(K)
-            END DO
-          END DO
-        END IF !LINEAR
-
-        IF (TRIM(INI_TYPE).EQ.'DATA') THEN
-          KBM1=KBM1 !mdr
-	  ALLOCATE(TEMPB(MGL,KBM1))
-	  ALLOCATE(DATA_3D(M,KBM1))
-          DO I=1,MGL 
-            READ(1,*) (TEMPB(I,K), K=1,KBM1)
-          END DO
-
-          IF(SERIAL)THEN
-            DATA_3D = TEMPB
-          END IF
-
-#   if defined (MULTIPROCESSOR)
-          IF(PAR)THEN
-            DO I=1,M
-              DATA_3D(I,1:KBM1) = TEMPB(NGID(I),1:KBM1)
-            END DO
-          END IF
-#    endif
-          DO I=1,M
-            DO K=1,KBM1
-              DATA_BIO(K)=DATA_3D(I,K)
-            END DO
-            DO K= 1,KBM1
-              ZM(K) =ZZ(I,K)*D(I)+EL(I)
-            END DO
-               DATA_INT(1:KBM1) = DATA_BIO(1:KBM1)
-            DO K =1,KBM1
-              BIO_ALL(I,K,LL+INP-1) = DATA_INT(K)
-            END DO
-          END DO
-        END IF !DATA
-      END DO !L=1,NNP; PHYTOPLANKTON INITIALIZATION
-
-!*********      ZOOPLANKTON INITIAL CONDITIONS   *************
-      DO LL=1,NNZ
-        WRITE(BIO_NUMBER,'(I1.1)')LL
-        OPEN(1,FILE=TRIM(INPUT_DIR)//'/ZOOPLANKTON_INI_'//TRIM(BIO_NUMBER)//'.dat',STATUS='old')
-        READ(1,*)INI_TYPE
-        IF (TRIM(INI_TYPE).EQ.'CONSTANT') THEN
-          READ(1,*)DATA_BIO(1)
-          DO I=1,M
-            DO K=1,KB
-              BIO_ALL(I,K,LL+INZ-1)=DATA_BIO(1)
-            END DO
-          END DO
-        END IF
-        IF (TRIM(INI_TYPE).EQ.'LINEAR') THEN
-          N_DATA=1
- 31       READ(1,*,END=32)DEPTH_STD(N_DATA),DATA_BIO(N_DATA)
-          N_DATA=N_DATA+1
-          GO TO 31
- 32       N_DATA=N_DATA-1
-          DO I=1,M
-            DO K= 1,KBM1
-              ZM(K) =ZZ(I,K)*D(I)+EL(I)
-            END DO
-            CALL SINTER_BIO(DEPTH_STD,DATA_BIO,ZM,DATA_INT,N_DATA,KBM1)
-            DO K =1,KBM1
-              BIO_ALL(I,K,LL+INZ-1) = DATA_INT(K)
-            END DO
-          END DO
-        END IF !LINEAR
-
-        IF (TRIM(INI_TYPE).EQ.'DATA') THEN
-          KBM1=KBM1 !mdr
-	  ALLOCATE(TEMPB(MGL,KBM1))
-	  ALLOCATE(DATA_3D(M,KBM1))
-          DO I=1,MGL 
-            READ(1,*) (TEMPB(I,K), K=1,KBM1)
-          END DO
-
-          IF(SERIAL)THEN
-            DATA_3D = TEMPB
-          END IF
-
-#   if defined (MULTIPROCESSOR)
-          IF(PAR)THEN
-            DO I=1,M
-              DATA_3D(I,1:KBM1) = TEMPB(NGID(I),1:KBM1)
-            END DO
-          END IF
-#    endif
-          DO I=1,M
-            DO K=1,KBM1
-              DATA_BIO(K)=DATA_3D(I,K)
-            END DO
-            DO K= 1,KBM1
-              ZM(K) =ZZ(I,K)*D(I)+EL(I)
-            END DO
-               DATA_INT(1:KBM1) = DATA_BIO(1:KBM1)
-            DO K =1,KBM1
-              BIO_ALL(I,K,LL+INZ-1) = DATA_INT(K)
-            END DO
-          END DO
-        END IF !DATA
-      END DO !L=1,NNZ; ZOOPLANKTON INITIALIZATION
-
-
-!*********      BACTERIA INITIAL CONDITIONS   *************
-      DO LL=1,NNB
-        WRITE(BIO_NUMBER,'(I1.1)')LL
-        OPEN(1,FILE=TRIM(INPUT_DIR)//'/BACTERIA_INI_'//TRIM(BIO_NUMBER)//'.dat',STATUS='old')
-        READ(1,*)INI_TYPE
-        IF (TRIM(INI_TYPE).EQ.'CONSTANT') THEN
-          READ(1,*)DATA_BIO(1)
-          DO I=1,M
-            DO K=1,KB
-              BIO_ALL(I,K,LL+INB-1)=DATA_BIO(1)
-            END DO
-          END DO
-        END IF
-        IF (TRIM(INI_TYPE).EQ.'LINEAR') THEN
-          N_DATA=1
- 41       READ(1,*,END=42)DEPTH_STD(N_DATA),DATA_BIO(N_DATA)
-          N_DATA=N_DATA+1
-          GO TO 41
- 42       N_DATA=N_DATA-1
-          DO I=1,M
-            DO K= 1,KBM1
-              ZM(K) =ZZ(I,K)*D(I)+EL(I)
-            END DO
-            CALL SINTER_BIO(DEPTH_STD,DATA_BIO,ZM,DATA_INT,N_DATA,KBM1)
-            DO K =1,KBM1
-              BIO_ALL(I,K,LL+INB-1) = DATA_INT(K)
-            END DO
-          END DO
-        END IF !LINEAR
-
-        IF (TRIM(INI_TYPE).EQ.'DATA') THEN
-          KBM1=KBM1 !mdr
-	  ALLOCATE(TEMPB(MGL,KBM1))
-	  ALLOCATE(DATA_3D(M,KBM1))
-          DO I=1,MGL 
-            READ(1,*) (TEMPB(I,K), K=1,KBM1)
-          END DO
-
-          IF(SERIAL)THEN
-            DATA_3D = TEMPB
-          END IF
-
-#   if defined (MULTIPROCESSOR)
-          IF(PAR)THEN
-            DO I=1,M
-              DATA_3D(I,1:KBM1) = TEMPB(NGID(I),1:KBM1)
-            END DO
-          END IF
-#    endif
-          DO I=1,M
-            DO K=1,KBM1
-              DATA_BIO(K)=DATA_3D(I,K)
-            END DO
-            DO K= 1,KBM1
-              ZM(K) =ZZ(I,K)*D(I)+EL(I)
-            END DO
-               DATA_INT(1:KBM1) = DATA_BIO(1:KBM1)
-            DO K =1,KBM1
-              BIO_ALL(I,K,LL+INB-1) = DATA_INT(K)
-            END DO
-          END DO
-        END IF !DATA
-      END DO !L=1,NNB; BACTERIA INITIALIZATION
-
-
-!*********      DOM INITIAL CONDITIONS   *************
-      DO LL=1,NNM
-        WRITE(BIO_NUMBER,'(I1.1)')LL
-        OPEN(1,FILE=TRIM(INPUT_DIR)//'/DOM_INI_'//TRIM(BIO_NUMBER)//'.dat',STATUS='old')
-        READ(1,*)INI_TYPE
-        IF (TRIM(INI_TYPE).EQ.'CONSTANT') THEN
-          READ(1,*)DATA_BIO(1)
-          DO I=1,M
-            DO K=1,KB
-              BIO_ALL(I,K,LL+INM-1)=DATA_BIO(1)
-            END DO
-          END DO
-        END IF
-        IF (TRIM(INI_TYPE).EQ.'LINEAR') THEN
-          N_DATA=1
- 51       READ(1,*,END=52)DEPTH_STD(N_DATA),DATA_BIO(N_DATA)
-          N_DATA=N_DATA+1
-          GO TO 51
- 52       N_DATA=N_DATA-1
-          DO I=1,M
-            DO K= 1,KBM1
-              ZM(K) =ZZ(I,K)*D(I)+EL(I)
-            END DO
-            CALL SINTER_BIO(DEPTH_STD,DATA_BIO,ZM,DATA_INT,N_DATA,KBM1)
-            DO K =1,KBM1
-              BIO_ALL(I,K,LL+INM-1) = DATA_INT(K)
-            END DO
-          END DO
-        END IF !LINEAR
-
-        IF (TRIM(INI_TYPE).EQ.'DATA') THEN
-          KBM1=KBM1 !mdr
-	  ALLOCATE(TEMPB(MGL,KBM1))
-	  ALLOCATE(DATA_3D(M,KBM1))
-          DO I=1,MGL 
-            READ(1,*) (TEMPB(I,K), K=1,KBM1)
-          END DO
-
-          IF(SERIAL)THEN
-            DATA_3D = TEMPB
-          END IF
-
-#   if defined (MULTIPROCESSOR)
-          IF(PAR)THEN
-            DO I=1,M
-              DATA_3D(I,1:KBM1) = TEMPB(NGID(I),1:KBM1)
-            END DO
-          END IF
-#    endif
-          DO I=1,M
-            DO K=1,KBM1
-              DATA_BIO(K)=DATA_3D(I,K)
-            END DO
-            DO K= 1,KBM1
-              ZM(K) =ZZ(I,K)*D(I)+EL(I)
-            END DO
-               DATA_INT(1:KBM1) = DATA_BIO(1:KBM1)
-            DO K =1,KBM1
-              BIO_ALL(I,K,LL+INM-1) = DATA_INT(K)
-            END DO
-          END DO
-        END IF !DATA
-      END DO !L=1,NNM; DOM INITIALIZATION
-
 IF(DBG_SET(DBG_SBR)) WRITE(IPT,*)"Start DETRITIS INITIAL CONDITIONS"
 !*********      DETRITUS INITIAL CONDITIONS   *************
       DO LL=1,NND
@@ -1479,84 +1027,6 @@ IF(DBG_SET(DBG_SBR)) WRITE(IPT,*)"Start DETRITIS INITIAL CONDITIONS"
 !!$      CALL BIO_NETCDF_HEADER
 
 
-!L3 Add if-def or put it separate subroutine ---------------!
-#  if defined (Tribs)
-
-! MDR, initialize nutrient loads
-! Nutrient loads will be applied to the BIO_ALL array as a mass/volume/time
-! the loads are input as daily values of kg/s mass flux for a specific tributary
-! node
-! the model will start with the first line of the load input file and update the
-! value each day
-! so make sure the input file starts on the start date of the model
-!  all the load input files should have the same number of tributaries (columns)
-!  and records
-IF(DOLOADS) THEN
-  IF(MSR) PRINT*,'Simulating with nutrient loads'
-  BIO_NUMBER = '1'
-  OPEN(1,FILE=TRIM(INPUT_DIR)//'DETRITUS_TRIB_'//TRIM(BIO_NUMBER)//'.dat',STATUS='old')
-!mdr
-  READ(1,*)NTRIBS ! number of tributary load locations on first line of input file
-  READ(1,*)NLOADRECORDS ! number of daily load records
-
-  ALLOCATE(MLOADGL(1:NTRIBS)); MLOADGL = 0
-  ALLOCATE(MLOADLOCAL(1:NTRIBS)); MLOADLOCAL = 0
-  ALLOCATE(LOADSD1(1:NTRIBS)); LOADSD1 = 0.0
-  ALLOCATE(LOADSN1(1:NTRIBS)); LOADSN1 = 0.0
-  ALLOCATE(LOADARRD1(1:NLOADRECORDS,1:NTRIBS)); LOADARRD1 = 0.0
-  ALLOCATE(LOADARRN1(1:NLOADRECORDS,1:NTRIBS)); LOADARRN1 = 0.0
-
-  READ(1,*)MLOADGL(1:NTRIBS) ! global node locations to apply loads
-
-  DO LOADIND = 1,NLOADRECORDS
-    READ(1,*)LOADARRD1(LOADIND,1:NTRIBS) ! Detritus 1 load in kg/s
-  ENDDO
-  CLOSE(1)
-
-  BIO_NUMBER = '1'
-  OPEN(1,FILE=TRIM(INPUT_DIR)//'NUTRIENT_TRIB_'//TRIM(BIO_NUMBER)//'.dat',STATUS='old')
-!mdr
-  READ(1,*)NTRIBS ! number of tributary load locations on first line of input file
-  READ(1,*)NLOADRECORDS ! number of daily load records
-  READ(1,*)MLOADGL(1:NTRIBS) ! global node locations to apply loads
-
-  DO LOADIND = 1,NLOADRECORDS
-    READ(1,*)LOADARRN1(LOADIND,1:NTRIBS) ! Nutrient 1 load in kg/s
-  ENDDO
-  CLOSE(1)
-
-  LOADIND = 1 ! Current record in the load input arrays
-
-!L3 Use N2CD==P:C(=0.016 in paper) for Detritus, Just convert kg/s to g/s for both Detritus and Nutrient 
-!  LOADSD1(1:NTRIBS) = LOADARRD1(LOADIND,1:NTRIBS)*1000.0/(N2CD +1.0E-30) ! Initialize current load values, convert from kg/s to g/s
-  LOADSD1(1:NTRIBS) = LOADARRD1(LOADIND,1:NTRIBS)*1000.0*N2CD !  Initialize current load values, convert from kg/s to g/s
-  LOADSN1(1:NTRIBS) = LOADARRN1(LOADIND,1:NTRIBS)*1000.0
-
-  IF(SERIAL)THEN
-     MLOADLOCAL = MLOADGL
-     DOLOADSLOCAL = .TRUE.
-  END IF
-
-#   if defined (MULTIPROCESSOR)
-          IF(PAR)THEN
-            DO I=1,M
-            DO J=1,NTRIBS
-              IF(NGID(I) == MLOADGL(J)) THEN
-                DOLOADSLOCAL = .TRUE.
-                MLOADLOCAL(J) = I ! PRINT*,'MYID=',MYID,'J=',J,'MLOADGL(J)=',MLOADGL(J),'MLOADLOCAL(J)=',MLOADLOCAL(J)
-              ENDIF
-            END DO
-            END DO
-          END IF
-#    endif
-
-ENDIF ! end if doloads
-
-# endif
-
-!L3 End if-def or put it separate subroutine ---------------!
-
-
    RETURN
 END SUBROUTINE BIO_INITIAL
 
@@ -1625,7 +1095,7 @@ SUBROUTINE BIO_HOT_START
             END DO
           END IF
 #    endif
-      END DO  !DO I=1,NNT
+      END DO  !DO I=1,NND
       BIO_MEAN=BIO_ALL
 #    if defined (MULTIPROCESSOR)
       IF (PAR) CALL BIO_EXCHANGE
