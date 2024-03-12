@@ -46,6 +46,6 @@ clobber:
 
 Makefiles::
 
-#includes::
-#include ../make.inc
+includes::
+include ../make.inc
 # DO NOT DELETE
