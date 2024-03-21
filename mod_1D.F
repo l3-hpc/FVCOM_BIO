@@ -3,9 +3,6 @@ MODULE MOD_1D
 !***        DEFINE all PARAMETERS needed for every bio          ***
 !***   PARAMETERS ARE LISTED ALPHABETICALLY FOR EACH CATEGORY   ***
 !******************************************************************
-     IMPLICIT NONE
-     SAVE
-
 #    if !defined (DOUBLE_PRECISION)
      INTEGER, PARAMETER    :: SPP = SELECTED_REAL_KIND(6,30)
 #    else
@@ -15,7 +12,6 @@ MODULE MOD_1D
      INTEGER               :: KBV              ! VERTICAL LAYERS
      INTEGER               :: KBVM1            ! VERTICAL LAYERS MINUS 1
      INTEGER               :: NTT              ! TOTAL NUMBER OF STATE VARIALBES
-     INTEGER               :: NNA,INA          ! AUXILLIARY
 
      CHARACTER(LEN=50)               :: STRUCTURE     ! MODEL STRUCTURE
      CHARACTER(LEN=50), ALLOCATABLE  :: BIO_NAME(:,:) ! VARIABLE NAME FOR NETCDF OUTPUT
@@ -29,6 +25,4 @@ MODULE MOD_1D
      REAL(SPP), ALLOCATABLE :: RADIATION(:)     ! SURFACE RADIATION
      REAL(SPP), ALLOCATABLE :: T_BIO(:)         ! TEMPERATURE
      REAL(SPP)              :: T_STEP           ! TIME STEP
-
-
 END MODULE MOD_1D

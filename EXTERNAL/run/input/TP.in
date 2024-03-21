@@ -1,5 +1,0 @@
-1           !Number of Detritus vars
-"TP" "mg/L" !Name and units
-0.00        !Minimum value for Detritus
-6.0e-7      !Sinking rate, m/s
-0           !1=sink out, 0=no sink out 

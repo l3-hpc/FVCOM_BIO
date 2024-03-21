@@ -15,8 +15,19 @@
 #         FC       = mpif90 -static-libcxa -i-static
 
 BIOMODULE	= \
-libbiomodule.a(mod_1D.o)                       \
+libbiomodule.a(mod_1D.o)			\
+libbiomodule.a(mod_phytoplankton.o)		\
+libbiomodule.a(mod_zooplankton.o)		\
+libbiomodule.a(mod_bacteria.o)			\
+libbiomodule.a(mod_detritus.o)			\
+libbiomodule.a(mod_DOM.o)			\
+libbiomodule.a(mod_nutrient.o)			\
 libbiomodule.a(mod_parameter.o)                 \
+libbiomodule.a(phytoplankton.o)			\
+libbiomodule.a(zooplankton.o)			\
+libbiomodule.a(bacteria.o)			\
+libbiomodule.a(detritus.o)			\
+libbiomodule.a(DOM.o)				\
 libbiomodule.a(bio_mixing.o)                    \
 libbiomodule.a(Model_dim.o)\
 libbiomodule.a(states.o)\
@@ -46,7 +57,7 @@ libbiomodule.a(dissolved_oxygen.o)
 
 LIBS	=	libbiomodule.a
 
-FFLAGS_BIO = -O3     # -DDEBUG  -g -debug -check all
+FFLAGS_BIO = -O3 -g #-g -debug -check all -DDEBUG  #-O3
 
 libbiomodule.a: $(BIOMODULE)
 
@@ -70,8 +81,8 @@ clobber:
 
 Makefiles::
 
-includes::
-include ../make.inc
+#includes::
+#include ../make.inc
 # DO NOT DELETE
 #
 #

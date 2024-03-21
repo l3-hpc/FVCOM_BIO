@@ -1,0 +1,249 @@
+!******************************************************************************
+! PURPOSE: DATE_TIME.F90 - Routines for date/time computation.
+! NOTES:   Non-ADT module.
+! HISTORY: 2015-07-10 plessel.todd@epa.gov
+!******************************************************************************
+
+MODULE DATE_TIME
+
+  IMPLICIT NONE
+
+  ! Private
+
+  INTEGER,PARAMETER:: MONTHS = 12
+  INTEGER,PARAMETER:: SECONDS_PER_MINUTE = 60
+  INTEGER,PARAMETER:: MINUTES_PER_HOUR = 60
+  INTEGER,PARAMETER:: HOURS_PER_DAY = 24
+  INTEGER,PARAMETER:: SECONDS_PER_HOUR = SECONDS_PER_MINUTE * MINUTES_PER_HOUR
+  INTEGER,PARAMETER:: SECONDS_PER_DAY = SECONDS_PER_HOUR * HOURS_PER_DAY
+  ! September, April, June and November have 30 days,
+  ! all the rest have 31, except February which has 28 (or 29 on leap years).
+  INTEGER,PARAMETER,DIMENSION( MONTHS ):: DAYS_PER_MONTH = &
+    (/ 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31 /)
+
+PUBLIC SECONDS_PER_DAY, TOTAL_SECONDS,&
+       DATE_TIMESTAMP, IS_LEAP_YEAR, DAYS_IN_YEAR, DAYS_IN_MONTH, JDAY_IN_YEAR
+
+PRIVATE
+
+CONTAINS
+
+  ! Public
+
+  ! Commands:
+
+  ! Return number of seconds from a starting year to date/time:
+  !
+  FUNCTION TOTAL_SECONDS( START_YEAR, YEAR, MONTH, DAY, HOUR, MINUTE, SECOND) &
+    RESULT( RES )
+    IMPLICIT NONE
+    INTEGER,INTENT(IN):: START_YEAR, YEAR, MONTH, DAY, HOUR, MINUTE, SECOND
+    INTEGER(8) RES
+    ! Locals:
+    INTEGER(8) SECONDS_IN_YEAR, SECONDS_IN_MONTH
+    INTEGER THIS_YEAR, THIS_MONTH
+
+    RES = 0_8
+
+    ! Compute seconds to year:
+
+    THIS_YEAR = START_YEAR
+
+    DO WHILE ( THIS_YEAR .LT. YEAR )
+      SECONDS_IN_YEAR = SECONDS_PER_DAY
+      SECONDS_IN_YEAR = SECONDS_IN_YEAR * DAYS_IN_YEAR( THIS_YEAR )
+      RES = RES + SECONDS_IN_YEAR
+      THIS_YEAR = THIS_YEAR + 1
+    END DO
+    
+    ! Compute seconds to month:
+
+    THIS_MONTH = 1
+
+    DO WHILE ( THIS_MONTH .LT. MONTH )
+      SECONDS_IN_MONTH = SECONDS_PER_DAY
+      SECONDS_IN_MONTH = SECONDS_IN_MONTH * DAYS_IN_MONTH( YEAR, THIS_MONTH )
+      RES = RES + SECONDS_IN_MONTH
+      THIS_MONTH = THIS_MONTH + 1
+    END DO
+
+    ! Compute seconds to rest of timestamp:
+
+    RES = RES + ( DAY - 1 ) * SECONDS_PER_DAY
+    RES = RES + HOUR * SECONDS_PER_HOUR
+    RES = RES + MINUTE * SECONDS_PER_MINUTE
+    RES = RES + SECOND
+
+    RETURN
+  END FUNCTION TOTAL_SECONDS
+
+
+
+  ! DATE_TIMESTAMP: Compute a date-timestamp from a starting year and seconds
+  ! after starting year.
+  !
+  SUBROUTINE DATE_TIMESTAMP( START_YEAR, SECONDS, &
+                             YEAR, MONTH, DAY, HOUR, MINUTE, SECOND )
+    IMPLICIT NONE
+    INTEGER,INTENT(IN):: START_YEAR
+    INTEGER(8),INTENT(IN):: SECONDS
+    INTEGER,INTENT(OUT):: YEAR, MONTH, DAY, HOUR, MINUTE, SECOND
+    ! Locals:
+    INTEGER(8) REMAINING_SECONDS, SECONDS_IN_YEAR, SECONDS_IN_MONTH
+
+    REMAINING_SECONDS = SECONDS
+
+    ! Compute year:
+
+    YEAR = START_YEAR
+10  SECONDS_IN_YEAR = SECONDS_PER_DAY
+    SECONDS_IN_YEAR = SECONDS_IN_YEAR * DAYS_IN_YEAR( YEAR )
+
+    IF ( REMAINING_SECONDS .GE. SECONDS_IN_YEAR ) THEN
+      REMAINING_SECONDS = REMAINING_SECONDS - SECONDS_IN_YEAR
+      YEAR = YEAR + 1
+      GO TO 10
+    END IF
+
+    ! Compute month of year:
+
+    MONTH = 1
+20  SECONDS_IN_MONTH = SECONDS_PER_DAY
+    SECONDS_IN_MONTH = SECONDS_IN_MONTH * DAYS_IN_MONTH( YEAR, MONTH )
+
+    IF ( REMAINING_SECONDS .GE. SECONDS_IN_MONTH ) THEN
+      REMAINING_SECONDS = REMAINING_SECONDS - SECONDS_IN_MONTH
+      MONTH = MONTH + 1
+      GO TO 20
+    END IF
+
+    ! Compute day:
+
+    DAY = 1
+
+    IF ( REMAINING_SECONDS .GE. SECONDS_PER_DAY ) THEN
+      DAY = INT( REMAINING_SECONDS / SECONDS_PER_DAY )
+      REMAINING_SECONDS = REMAINING_SECONDS - DAY * SECONDS_PER_DAY
+      DAY = DAY + 1
+    END IF
+
+    ! Compute hour:
+
+    HOUR = 0
+
+    IF ( REMAINING_SECONDS .GE. SECONDS_PER_HOUR ) THEN
+      HOUR = INT( REMAINING_SECONDS / SECONDS_PER_HOUR )
+      REMAINING_SECONDS = REMAINING_SECONDS - HOUR * SECONDS_PER_HOUR
+    END IF
+
+    ! Compute minute:
+
+    MINUTE = 0
+
+    IF ( REMAINING_SECONDS .GE. SECONDS_PER_MINUTE ) THEN
+      MINUTE = INT( REMAINING_SECONDS / SECONDS_PER_MINUTE )
+      REMAINING_SECONDS = REMAINING_SECONDS - MINUTE * SECONDS_PER_MINUTE
+    END IF
+
+    ! Compute second:
+
+    SECOND = INT( REMAINING_SECONDS )
+
+    RETURN
+  END SUBROUTINE DATE_TIMESTAMP
+
+
+
+  ! Does year have 366 days?
+  !
+  FUNCTION IS_LEAP_YEAR( YEAR ) RESULT( RES )
+    IMPLICIT NONE
+    INTEGER,INTENT(IN):: YEAR
+    LOGICAL RES
+
+    RES = .FALSE.
+
+    IF ( MOD( YEAR, 4 ) .EQ. 0 ) THEN
+      RES = MOD( YEAR, 100 ) .NE. 0
+
+      IF ( RES .EQV. .FALSE. ) THEN
+        RES = MOD( YEAR, 400 ) .EQ. 0
+      END IF
+    END IF
+
+    RETURN
+  END FUNCTION IS_LEAP_YEAR
+
+
+
+  ! Number of days in a given year.
+  !
+  FUNCTION DAYS_IN_YEAR( YEAR ) RESULT( RES )
+    IMPLICIT NONE
+    INTEGER,INTENT(IN):: YEAR
+    INTEGER RES
+
+    RES = 365
+
+    IF ( IS_LEAP_YEAR( YEAR ) ) THEN
+      RES = RES + 1
+    END IF
+
+    RETURN
+  END FUNCTION DAYS_IN_YEAR
+
+
+
+  ! Number of days in a given year and month.
+  !
+  FUNCTION DAYS_IN_MONTH( YEAR, MONTH ) RESULT( RES )
+    IMPLICIT NONE
+    INTEGER,INTENT(IN):: YEAR, MONTH
+    INTEGER RES
+
+    RES = DAYS_PER_MONTH( MONTH )
+
+    IF ( MONTH .EQ. 2 ) THEN
+
+      IF ( IS_LEAP_YEAR( YEAR ) ) THEN
+        RES = RES + 1
+      END IF
+    END IF
+
+    RETURN
+  END FUNCTION DAYS_IN_MONTH
+
+
+
+  ! Day of the year (1-366)
+  !
+  FUNCTION JDAY_IN_YEAR( YEAR, MONTH, DAY ) RESULT( RES )
+  !"J" is to distinguish this subroutine from DAYS_IN_YEAR
+  !and is inspired by legacy code from 'julian day' subroutines
+    IMPLICIT NONE
+    INTEGER,INTENT(IN):: YEAR, MONTH, DAY
+    INTEGER RES
+
+    INTEGER  JM0(13) ! Cumulative days in year at beginning of each
+                     ! month for non-leap year
+
+    DATA  JM0/0,31,59,90,120,151,181,212,243,273,304,334,365/
+
+    RES = JM0(MONTH) + DAY
+
+    IF ( MONTH .GE. 2 ) THEN
+
+      IF ( IS_LEAP_YEAR( YEAR ) ) THEN
+        RES = RES + 1
+      END IF
+
+    END IF
+
+    RETURN
+  END FUNCTION JDAY_IN_YEAR
+
+
+
+END MODULE DATE_TIME
+
+

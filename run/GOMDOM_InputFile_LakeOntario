@@ -1,0 +1,266 @@
+"GoMDOM2k input file 9.9.16, Salinity ICBC, no Si flux" 		!Code_ID: Default - Oct 2016 (see spreadsheet)
+
+!Simulation Specifics
+2013     4     1     2      0     0		!- starting time Yr, Mon, Day, Hr, Min, Sec
+2013     5     1     2      0     0		!- ending   time Yr, Mon, Day, Hr, Min, Sec
+30 3600      	!- dT (timestep, secs); dT_out (output interval, secs); dT_restart (restart interval, secs)
+0		        !- How cell Location is specified:0==long-lat 1==grid-units
+-92.39 29.03		!- Cell i,j coord (if grid-units) or longcent,latcent vals (if long-lat)
+
+!Switches in GEM
+0 0 0 0 0 0 0 0	0 !Which_Fluxes: Toggle on(1) off(0): O2surf, DICsurf, SOD, MPB, Nutrient Exchange, CMAQ, 
+                  !Instant Remineralization(1=with Flux, 2=just sinking), Sediment Diagenesis, Silica
+0 0 0 0		!ReadVars: Solar=Calculate(0),Read(1),Read PAR(2); Wind== 5mph(0) or Read(1), Temp== cosine w/params(0) or Read(1), Sal== Read one value(0) or Read(1) 
+0		!InitializeHow: 0==Read File, 1==Salinity Regression
+
+!Optics
+1		!Which_irradiance:(Light Model) 0==none, 1==GoMDOM 2==Brad 
+0.0375          !astar490: Chla specific absorption at 490 nm
+0.015           !aw490: seawater absorption at 490 nm
+0.0             !astarOMA: REUSE to set constant CDOM(ppb) 
+0.01            !astarOMZ: Zooplankton specific absorption at 490 nm
+0.01            !astarOMR: ROC specific absorption at 490 nm
+0.01            !astarOMBC: LOC specific absorption at 490 nm
+1.              !PARfac: Multiplies surface PAR
+
+!River Loads - used in 3D only
+1		!rcNO3  - factor multiplying NO3 river load
+1		!rcNH4  - factor multiplying NH4 river load
+1		!rcPO4  - factor multiplying PO4 river load
+1		!rcSi   - factor multiplying Si river load
+
+!Other including Boundary Conditions
+1 1		!Which_VMix: 0==No VMixingi/Adv, Other==Yes VMixing/Adv   
+1		!KH_coeff: multiplying factor for KH in VMixing  
+1		!Which_Outer_BC: 0==Salinity, 1==GoMDOM original, 2==GoMDOM Full Grid
+0 0 0 		!Multipliers for OM_bc at initial conditions and for boundary conditions, lateral and shelf
+0               !DoDroop, 1==Droop
+
+C
+C  FIREAD file
+C
+
+5.00E-02          ! ALPHA_DIA: Initial slope of diatom light sat curve 
+5.00E-02          ! ALPHA_GRE: Initial slope of greens light sat curve
+
+0.25              ! ANCP: N:C ratio
+0.01              ! APCP: P:C ratio (too low for the original)
+2.3               ! ASCD: Si:C ratio
+0.05              ! AVFRAC: Available DOP fraction
+0.05              ! AVFRACDON: Available DON fraction
+
+8.60E-07          ! BMRD: diatom mortality
+8.60E-07          ! BMRG: greens mortality
+
+40                ! CCHLD: C:chl ratio for diatoms
+40                ! CCHLG: C:chl ratio for greens
+
+1.16E-05          ! CGZ: zoo grazing rate - Gulf GoMDOM value (different from original LM3 Eutro eq)
+
+1.07              ! DENIT_CN_RATIO  
+
+0.30              ! FCDD: Frac mort = DOC (d)
+0.30              ! FCDG: Frac mort = DOC (g)
+0.50              ! FCDP: Frac pred = DOC
+0.30              ! FCDZ: Frac z-mort = DOC
+0.20              ! FCLD: Frac mort = LOC (d)
+0.20              ! FCLG: Frac mort = LOC (g)
+0.40              ! FCLP: Frac LPDC (pred)
+0.20              ! FCLZ: Frac LPDC z-mort
+0.10              ! FCRD: Frac mort = ROC (d)
+0.10              ! FCRG: Frac mort = ROC (g)
+0.10              ! FCRP: Frac RPDC (pred)
+0.10              ! FCRZ: Frac RPDC z-mort
+0.30              ! FNDD: Frac mort = DON(d)
+0.30              ! FNDG: Frac mort = DON (g)
+0.40              ! FNDP: Frac pred= DON
+0.30              ! FNDZ: Frac z-mort = DON
+0.40              ! FNID: Frac mort=DIN (d)
+0.40              ! FNIG: Frac mort = DIN(g)
+0.40              ! FNIP: Frac pred = DIN
+0.40              ! FNIZ: Frac DIN z-mort
+0.20              ! FNLD: Frac mort=LON(d)
+0.20              ! FNLG: Frac mort= LON(g)
+0.10              ! FNLP: Frac pred=LON
+0.20              ! FNLZ: Frac z-mort=LON
+0.10              ! FNRD: Frac mort=RON(d)
+0.10              ! FNRG: Frac mort=RON(g)
+0.10              ! FNRP: Frac pred=RON
+0.10              ! FNRZ: Frac z-mort= RON
+0.30              ! FPDD: Frac mort=DOP(d)
+0.30              ! FPDG: Frac mort = DOP(g)
+0.40              ! FPDP: Frac pred=DOP
+0.30              ! FPDZ: Frac z-mort DOP
+0.40              ! FPID: Frac mort=DIP(d)
+0.40              ! FPIG: Frac mort=DIP(g)
+0.40              ! FPIP: Frac pred=DIP
+0.40              ! FPIZ: Frac z-mort=DIP
+0.20              ! FPLD: Frac mort=LOP(d)
+0.20              ! FPLG: Frac mort= LOP(g)
+0.10              ! FPLP: Fract pred=LOP
+0.20              ! FPLZ: Frac z-mort LOP
+0.10              ! FPRD: Frac mort=ROP(d)
+0.10              ! FPRG: Frac mort=ROP(g)
+0.10              ! FPRP: Frac pred=ROP
+0.10              ! FPRZ: Frac z-mort ROP
+0.00              ! FSAP: Frac pred = DSi
+
+0.20              ! GREFF: zoo grazing coeff (LM3-Eutro used 0.6 which seems high)
+
+1                ! ILMUL: scaling factor for surface short wave radiation
+
+1.45E-07         ! KDC: min DOC mineraliz
+4.00E-04         ! KDCALG: DOC alg dependance
+1.67E-07         ! KDN: min DON mineraliz
+0.00E+00         ! KDNALG: DON alg depedence
+5.79E-07         ! KDP: min DOP mineral
+0.0              ! KDPALG: DOP alg dependence
+
+0                ! KDWD: Specifies light attenuation eqn, default=0
+0                ! KE: Background light attenuation [m^-1]
+0                ! KECHL: Light attenuation factor for chlorophyll-a [m^2-kg^-1]
+
+1.00E-03         ! KHDONT_SED
+2.50E-05         ! KHN: Organic N Decay Half Saturation Constant
+2.50E-05         ! KHND: mean N half sat (dia)
+2.50E-05         ! KHNG: mean N half sat (gre)
+1.00E-05         ! KHNNT: half sat of NH3 for nitr
+1.00E-03         ! KHODOC_SED
+5.00E-07         ! KHP: Organic P Decay Half Saturation Constant
+5.00E-06         ! KHPD: mean P half sat (dia) - change from 5.00E-07
+5.00E-06         ! KHPG: mean P half sat (gre) - change from 5.00E-07
+6.00E-06         ! KHSD: mean Si half sat (dia) - before 6.00E-05 
+1.00E-07         ! KLC: min hyd for LOC
+0.00E+00         ! KLCALG: LOC alg dependence
+3.47E-07         ! KLN: min hyd for LON
+0.00E+00         ! KLNALG: LON alg dependence
+2.30E-07         ! KLP: min hyd for LOP  Note: defaults difference to the LM3 Eutro value
+6.00E-03         ! KLPALG: LOP alg dependence
+1.00E-07         ! KRC: min hyd for ROC
+0.00E+00         ! KRCALG: POC alg dependence
+3.47E-08         ! KRN: min hyd for RON
+0.00E+00         ! KRNALG: RON alg dependence
+5.70E-08         ! KRP: min hyd for ROP
+0.00E+00         ! KRPALG: ROP alg dependence
+2.50E-06         ! KSUA: BSi diss rate
+7.50E-05         ! KSZ: zoo half sat phyto
+0.074            ! KTBD: dia mort temp coeff 
+0.074            ! KTBG: gre mort temp coeff 
+0.025            ! KTGD1: temp coeff < (dia) before - 0.025
+0.006            ! KTGD2: temp coeff > (dia)
+0.025            ! KTGG1: temp coeff < (gre) before - 0.025
+0.006            ! KTGG2: temp coeff > (gre)
+0.099            ! KTHDR: hyd temp dep
+0.074            ! KTMNL: min temp dep
+0.004            ! KTNT1: temp coeff < nitr
+0.004            ! KTNT2: temp coeff > nitr
+0.069            ! KTSUA: silic diss temp coeff
+2.50E-11         ! NTM: nitrif rate 
+4.30E+00         ! PBMAX_DIA: photo rate at opt illum  (need to understand)
+4.30E+00         ! PBMAX_GRE: photo rate at opt illum  (need to understand)
+2.90E-05         ! PMD: dia prod
+2.60E-05         ! PMG: gre prod
+
+1.00E-3          ! RSODNTR
+
+2                ! SILIM: Minimum nutrient limits growth
+
+18               ! TMD: opt temp dia
+18               ! TMG: opt temp gre
+30               ! TMNT: opt temp nitr
+20               ! TRD: opt metab temp (dia)
+20               ! TRG: opt metab temp (gre)
+20               ! TRHDR: opt hydr temp
+20               ! TRMNL: opt mineral temp
+20               ! TRSUA: opt Si diss temp
+20               ! TZREF: opt pred temp
+20               ! TREF: SOD reference temp
+0.15             ! ZDTH: zoo mort, was 5.0E-07
+1.05             ! ZTHET: temp coeff pred
+
+!  Dissolved Oxygen related parameters
+
+1.0E-10         ! KCOD: DOC oxidation rate
+0.0             ! KDENITR: Max denitrification rate coefficient
+1.0E-03         ! KHDENITR: Half-sat [NO3] for dentrification
+1.0E-03         ! KHDONT: Half-sat [D.O] required for nitrification
+1.0E-03         ! KHOCOD: Half-sat [D.O] required for exertion of COD
+5.0E-04         ! KHODOC: Half-sat [D.O] required for oxic respiration
+2.77E-05        ! KRDO: D.O. reaeration coefficient (m/s)
+2.67E+00        ! RCDO: D.O. to carbon ratio in resp 
+4.33E+00        ! RNTO: ratio of O2 consumed to nitrif
+
+! Droop Kinetics (not used in Monod and not tested yet)
+
+0.4             !FINTNID  
+0.3             !FINTNDD 
+0.2             !FINTNLD
+0.1             !FINTNRD
+ 
+0.4             !FINTNIG  
+0.3             !FINTNDG 
+0.2             !FINTNLG
+0.1             !FINTNRG  
+ 
+0.4             !FINTLUXNIP  
+0.4             !FINTSTRNIP 
+0.4             !FINTLUXNDP
+0.4             !FINTSTRNDP  
+0.1             !FINTLUXNLP 
+0.1             !FINTSTRNLP
+0.1             !FINTLUXNRP  
+0.1             !FINTSTRNRP 
+
+0.4             !FINTPID 
+0.3             !FINTPDD
+0.2             !FINTPLD  
+0.1             !FINTPRD 
+ 
+0.4             !FINTPIG  
+0.3             !FINTPDG 
+0.2             !FINTPLG
+0.1             !FINTPRG  
+ 
+0.4             !FINTLUXPIP  
+0.4             !FINTSTRPIP 
+0.4             !FINTLUXPDP
+0.4             !FINTSTRPDP  
+0.1             !FINTLUXPLP 
+0.1             !FINTSTRPLP
+0.1             !FINTLUXPRP  
+0.1             !FINTSTRPRP 
+ 
+2.0E-05         !KHINTND 
+2.0E-05         !KHINTNG
+2.0E-05         !KHINTPD  
+2.0E-05         !KHINTPG 
+ 
+0.088           !QMINND   
+0.088           !QMINNG  
+0.0122          !QMINPD 
+0.0122          !QMINPG
+0.88            !QMAXND   
+0.88            !QMAXNG  
+0.122           !QMAXPD 
+0.122           !QMAXPG
+9.17E-07        !UPNMAXD  
+9.17E-07        !UPNMAXG 
+1.27E-07        !UPPMAXD
+1.27E-07        !UPPMAXG  
+
+! Settling rates
+
+2.00E-06		! VDIA  different from before
+5.79E-06                ! VDIAN (Droop - not tested)
+5.79E-06                ! VDIAP (Droop - not tested)
+4.00E-06		! VGRE	different from before
+5.79E-06                ! VGREN
+5.79E-06                ! VGREP	
+2.00E-06		! VLOC
+2.00E-06		! VROC
+2.00E-06		! VLON
+2.00E-06		! VRON
+2.00E-06		! VLOP
+2.00E-06		! VROP
+8.00E-05		! VSU   different from before
+0.0E0                   ! VST   tracer

@@ -46,7 +46,6 @@ MODULE MOD_BIO_3D
 !   use netcdf
 
    USE MOD_1D
-   USE MOD_DETRITUS !,        ONLY: BIO_D,NND,IND
    USE MOD_PARAMETER
 
    IMPLICIT NONE
@@ -80,8 +79,10 @@ SUBROUTINE BIO_3D1D
      IMPLICIT NONE
      SAVE
      INTEGER  :: I,J,K,L
+     REAL(SP) :: SPCP,ROSEA,SPRO,IRRAD0,PARFRAC
+     REAL(SP) :: BIO_N(KBV,NTT)
 
-     REAL(SP) :: SPCP,ROSEA,SPRO !,BIO_VAR_MEAN(M,KBM1,NTT)
+  PARFRAC     =  0.43_SPP
 
   if(dbg_set(dbg_sbr)) write(ipt,*)&
        & "Start: BIO_3D1D"
@@ -91,51 +92,36 @@ SUBROUTINE BIO_3D1D
      SPRO=SPCP*ROSEA
 !     BIO_VAR_MEAN = 0.0_SP
 !---------------------------                    !MAIN LOOP OVER ELEMENTS
-  if(dbg_set(dbg_sbr)) write(ipt,*)&
-       & "Start: BIO_3D1D, spcp"
 
 #    if defined (ONE_D_MODEL)
      DO I=M,M
 #    else
      DO I=1,M
-  if(dbg_set(dbg_sbr)) write(ipt,*)&
-       & i 
-
 #    endif
        DO K=1,KBM1                              !3D TO 1D FIELD
-  if(dbg_set(dbg_sbr)) write(ipt,*)&
-       & k
-
-         DO J=1,NND
-            BIO_D(K,J)=BIO_ALL(I,K,J)
+!L3 Just use BIO_N
+         DO J=1,NTT
+            BIO_N(K,J)=BIO_ALL(I,K,J)
          END DO
-  if(dbg_set(dbg_sbr)) write(ipt,*)&
-       & "D" 
-
          DELTA_D(K)=DZ(I,K)*D(I)                   !LAYER THICKNESS
          DELTA_Z(K)=DZZ(I,K)*D(I)                  !DISTANCE BETWEEN LAYERS
          DEPTH_Z(K)=Z(I,K)*D(I)                    !LAYER CENTER DEPTH
- 
-  if(dbg_set(dbg_sbr)) write(ipt,*)&
-       & "before T_BIO"
-        T_BIO(K)=T1(I,K)
+         IRRAD0=-SWRAD(I)*PARFRAC*SPRO/RAMP      !PAR FRACTION
+         T_BIO(K)=T1(I,K)
        END DO                                    !K=1,KB
-
-
-!L3 just use 'NND', TP is defined in 'DETRITUS', remove PHYTO, ZOO, etc.
        T_STEP=DTI
-       CALL DETRITUS
+       call bio_geo_chem(BIO_N,T_BIO,IRRAD0)
 
         DO K=1,KBM1                                !1D TO 3D FIELD
-          DO J=1,NND
-             BIO_ALL(I,K,J)=BIO_D(K,J)
+          DO J=1,NTT
+             BIO_ALL(I,K,J)=BIO_N(K,J)
           END DO
         END DO 
-
       KM_BIO(:)=KH(I,:)
+!      write(6,*) "I,M,BIO_ALL",I,M,BIO_ALL(I,1,:)
+!      write(6,*) "NTT,KBM1,KBV", NTT,KBM1,KBV
       BIO_VAR(1:KBV,1:NTT)=BIO_ALL(I,1:KBV,1:NTT)
       CALL BIO_MIXING 
-
       BIO_ALL(I,1:KBV,1:NTT)=BIO_VAR(1:KBV,1:NTT)
       END DO !I=1,M 
 #    if !defined (ONE_D_MODEL)
@@ -155,9 +141,7 @@ SUBROUTINE BIO_3D1D
       BIO_ALL=BIO_F                                   !UPDATE
 #    endif
 !    end if defined 1D
-!mdr WHERE (BIO_ALL < 0.001) BIO_ALL=0.001
-      WHERE (BIO_ALL < 0.0) BIO_ALL=0.0 !mdr
-      WHERE (BIO_ALL > 20.0) BIO_ALL=20.0 !mdr, limit concentrations 
+!L3      WHERE (BIO_ALL < 0.001) BIO_ALL=0.001
 
   if(dbg_set(dbg_sbr)) write(ipt,*)&
        & "End: BIO_3D1D"
@@ -170,8 +154,8 @@ END SUBROUTINE BIO_3D1D
    SUBROUTINE BIO_ADV  
 !=============================================================================!
 !                                                                             !
-!   This subroutine is used to calculate the horizontal advection and         !
-!   and diffusion terms for the state variables of the adjustable biomodel    !
+!  This subroutine is used to calculate the advection and horizontal diffusion!
+!  terms for the state variables of the adjustable biomodel                   !
 !=============================================================================!
 
    USE ALL_VARS
@@ -180,9 +164,12 @@ END SUBROUTINE BIO_3D1D
    USE MOD_PAR   
    USE MOD_WD
    USE MOD_SPHERICAL
-# if defined (SEMI_IMPLICIT)
-  USE MOD_SEMI_IMPLICIT, ONLY : IFCETA 
-# endif
+#  if defined (SEMI_IMPLICIT)
+   USE MOD_SEMI_IMPLICIT, ONLY : IFCETA 
+#  endif
+#  if defined (TVD)
+   USE MOD_TVD
+#  endif
 
    IMPLICIT NONE
 
@@ -214,10 +201,14 @@ END SUBROUTINE BIO_3D1D
    REAL(SP), DIMENSION(3*(NT),KBM1) :: UVN1
    REAL(SP), DIMENSION(3*(NT),KBM1) :: DTIJ1
 #  endif
+# if defined (TVD)
+   REAL(SP) :: S_upstreamA,S_upstreamB
+   REAL(SP) :: A_limiter,B_limiter,smoothrA,smoothrB
+#  endif
 #  if defined (MPDATA)
    REAL(SP) :: WQMMIN,WQMMAX,XXXX
-   REAL(SP), DIMENSION(0:MT,KB)     :: WQM_S    !! temporary salinity in modified upwind
-   REAL(SP), DIMENSION(0:MT,KB)     :: WQM_SF   !! temporary salinity in modified upwind
+   REAL(SP), DIMENSION(0:MT,KB)     :: WQM_S    !! temporary BIO in modified upwind
+   REAL(SP), DIMENSION(0:MT,KB)     :: WQM_SF   !! temporary BIO in modified upwind
    REAL(SP), DIMENSION(0:MT,KB)     :: WWWS     
    REAL(SP), DIMENSION(0:MT,KB)     :: WWWSF   
    REAL(SP), DIMENSION(0:MT)        :: DTWWWS  
@@ -226,7 +217,7 @@ END SUBROUTINE BIO_3D1D
    REAL(SP), DIMENSION(0:MT,KB)     :: BETAIN  !! temporary beta coefficient in corrected part
    REAL(SP), DIMENSION(0:MT,KB)     :: BETAOUT !! temporary beta coefficient in corrected part
    REAL(SP), DIMENSION(0:MT,KB)     :: BIO_FRESH    !! for source term
-
+   REAL(SP), DIMENSION(0:MT,KB,NTT) :: OFFS     !! Offset to avoid values less than zero.
    INTEGER ITERA, NTERA
 #  endif
 
@@ -243,6 +234,13 @@ END SUBROUTINE BIO_3D1D
           & TRIM(HORIZONTAL_MIXING_TYPE) )
   END SELECT
 
+# if defined (MPDATA)
+  ! Adding offset to force FVCOM not to crash when variable BIO_ALL approach zero
+      OFFS = 1.0_SP
+      BIO_ALL = BIO_ALL+OFFS
+      BIO_MEAN = BIO_MEAN+OFFS
+# endif
+
 !
 !--Initialize Fluxes-----------------------------------------------------------
 !
@@ -251,10 +249,8 @@ END SUBROUTINE BIO_3D1D
 !
 !--Loop Over Control Volume Sub-Edges And Calculate Normal Velocity------------
 !
-!!#  if !defined (WET_DRY)
    DO I=1,NCV
      I1=NTRG(I)
-!     DTIJ(I)=DT1(I1)
      DO K=1,KBM1
        DTIJ(I,K) = DT1(I1)*DZ1(I1,K)
        UVN(I,K)=V(I1,K)*DLTXE(I) - U(I1,K)*DLTYE(I) 
@@ -264,20 +260,6 @@ END SUBROUTINE BIO_3D1D
 #      endif
      END DO
    END DO
-!!#  else
-!!   DO I=1,NCV
-!!     I1=NTRG(I)
-!!!     DTIJ(I)=DT1(I1)
-!!     DO K=1,KBM1
-!!       DTIJ(I,K) = DT1(I1)*DZ1(I1,K)
-!!       UVN(I,K) = VS(I1,K)*DLTXE(I) - US(I1,K)*DLTYE(I)
-!!#      if defined (SEMI_IMPLICIT)
-!!       DTIJ1(I,K) = D1(I1)*DZ1(I1,K)
-!!       UVN1(I,K) = VF(I1,K)*DLTXE(I) - UF(I1,K)*DLTYE(I)
-!!#      endif
-!!     END DO
-!!   END DO
-!!#  endif
 
 !!$   TTIME=THOUR
 
@@ -347,6 +329,7 @@ END SUBROUTINE BIO_3D1D
          IA=NIEC(I,1)
          IB=NIEC(I,2)
 
+# if !defined (TVD)
 !         FIJ1=BIO_ALL(IA,K,N1)+DXA*PFPX(IA)+DYA*PFPY(IA)
 !         FIJ2=BIO_ALL(IB,K,N1)+DXB*PFPX(IB)+DYB*PFPY(IB)
          FIJ1=BIO_ALL(IA,K,N1)+DLTXNCVE(I,1)*PFPX(IA)+DLTYNCVE(I,1)*PFPY(IA)
@@ -365,6 +348,37 @@ END SUBROUTINE BIO_3D1D
          IF(FIJ2 < WQM2MIN) FIJ2=WQM2MIN
          IF(FIJ2 > WQM2MAX) FIJ2=WQM2MAX
 
+# else
+! ------------------------------------------------------------------------------------------ !
+!                                     Drawing the TVD scheme
+! ------------------------------------------------------------------------------------------ !
+!     If A is upstream of B
+       S_upstreamA=BIO_ALL(Anear_node(I),K,N1)+PFPX(Anear_node(I))*XUAdist(I)+PFPY(Anear_node(I))*YUAdist(I)
+!     If B is upstream of A
+       S_upstreamB=BIO_ALL(Bnear_node(I),K,N1)+PFPX(Bnear_node(I))*XUBdist(I)+PFPY(Bnear_node(I))*YUBdist(I)                
+
+!     Smoothness-parameter
+       IF (BIO_ALL(IA,K,N1).EQ.BIO_ALL(IB,K,N1)) THEN
+          smoothrA    = 0.0_SP
+          smoothrB    = 0.0_SP
+       ELSE IF (BIO_ALL(IA,K,N1).LT.1.E-10.AND.BIO_ALL(IB,K,N1).LT.1.E-10) THEN
+          smoothrA    = 0.0_SP
+          smoothrB    = 0.0_SP
+       ELSE
+          smoothrA    = (BIO_ALL(IA,K,N1)-S_upstreamA)/(BIO_ALL(IB,K,N1)-BIO_ALL(IA,K,N1))
+          smoothrB    = (BIO_ALL(IB,K,N1)-S_upstreamB)/(BIO_ALL(IA,K,N1)-BIO_ALL(IB,K,N1))
+       END IF
+
+!     Flux-limiter
+!     (superbee) - Feel free to use other limiters!
+       A_limiter = MAX(0.0_SP, MIN(1.0_SP, 2.0_SP*smoothrA), MIN(2.0_SP, smoothrA))
+       B_limiter = MAX(0.0_SP, MIN(1.0_SP, 2.0_SP*smoothrB), MIN(2.0_SP, smoothrB))
+
+!     Estimating the variable at the cellwall in-betweem IA and IB
+       FIJ1     = BIO_ALL(IA,K,N1)+0.5_SP*A_LIMITER*(BIO_ALL(IB,K,N1)-BIO_ALL(IA,K,N1))
+       FIJ2     = BIO_ALL(IB,K,N1)+0.5_SP*B_LIMITER*(BIO_ALL(IA,K,N1)-BIO_ALL(IB,K,N1))
+
+# endif
          UN=UVN(I,K)
 #        if defined (SEMI_IMPLICIT)
          UN1=UVN1(I,K)
@@ -433,8 +447,316 @@ END SUBROUTINE BIO_3D1D
 !# endif
 
 
+   DO N1=1,ntt
 !#  if !defined (MPDATA)
-   DO N1=1,NTT
+!
+!--Calculate the Vertical Terms------------------------------------------------
+!
+!     DO K=1,KBM1
+!       DO I=1,M
+!#      if defined (WET_DRY)
+!       IF(ISWETN(I)*ISWETNT(I) == 1) THEN
+!#      endif
+!         IF(K == 1) THEN  !Is there any violation ?
+!           TEMP=-WTS(I,K+1)*(BIO_ALL(I,K,N1)*DZ(I,K+1)+BIO_ALL(I,K+1,N1)*DZ(I,K))/   &
+!	         (DZ(I,K)+DZ(I,K+1))
+!         ELSE IF(K == KBM1) THEN
+!           TEMP=WTS(I,K)*(BIO_ALL(I,K,N1)*DZ(I,K-1)+BIO_ALL(I,K-1,N1)*DZ(I,K))/      &
+!	         (DZ(I,K)+DZ(I,K-1))
+!         ELSE
+!           TEMP=WTS(I,K)*(BIO_ALL(I,K,N1)*DZ(I,K-1)+BIO_ALL(I,K-1,N1)*DZ(I,K))/      &
+!	         (DZ(I,K)+DZ(I,K-1))-  &
+!                WTS(I,K+1)*(BIO_ALL(I,K,N1)*DZ(I,K+1)+BIO_ALL(I,K+1,N1)*DZ(I,K))/    &
+!		 (DZ(I,K)+DZ(I,K+1))
+!         END IF
+
+!
+!--Total Fluxes ---------------------------------------------------------------
+!
+!         IF(ISONB(I) == 2) THEN
+!           XFLUX(I,K,N1)=TEMP*ART1(I)
+!         ELSE
+!           XFLUX(I,K,N1)=XFLUX(I,K,N1)+TEMP*ART1(I)
+!         END IF
+!#    if defined (WET_DRY)
+!       END IF
+!#    endif
+!       END DO  !i=1,M
+!     END DO    !k=1,kbm1
+
+!--Set Boundary Conditions-For Fresh Water Flux--------------------------------!
+!
+!     IF(RIVER_TS_SETTING == 'calculated') THEN
+!       IF(RIVER_INFLOW_LOCATION == 'node') THEN
+!         IF(NUMQBC > 0) THEN
+!           DO J=1,NUMQBC
+!             JJ=INODEQ(J)
+!             STPOINT=BIODIS(J,N1)
+!             DO K=1,KBM1
+!               XFLUX(JJ,K,N1)=XFLUX(JJ,K,N1) - QDIS(J)*VQDIST(J,K)*STPOINT
+!             END DO
+!           END DO
+!         END IF
+!       ELSE IF(RIVER_INFLOW_LOCATION == 'edge') THEN
+!         IF(NUMQBC > 0) THEN
+!           DO J=1,NUMQBC
+!             J1=N_ICELLQ(J,1)
+!             J2=N_ICELLQ(J,2)
+!             STPOINT=BIODIS(J,N1) !!ASK LIU SHOULD THIS BE STPOINT1(J1)/STPOINT2(J2)
+!             DO K=1,KBM1
+!               XFLUX(J1,K,N1)=XFLUX(J1,K,N1)-QDIS(J)*RDISQ(J,1)*VQDIST(J,K)*STPOINT
+!               XFLUX(J2,K,N1)=XFLUX(J2,K,N1)-QDIS(J)*RDISQ(J,2)*VQDIST(J,K)*STPOINT
+!             END DO
+!           END DO
+!         END IF
+!       END IF
+!     END IF
+
+!#  else
+#   if defined (MPDATA)
+
+!--------------------------------------------------------------------------------
+!   Using smolarkiewicz, P. K; A fully multidimensional positive definite advection
+!   TEMPport algorithm with small implicit diffusion, Journal of Computational
+!   Physics, 54, 325-362, 1984
+!-----------------------------------------------------------------        
+
+   BIO_FRESH=BIO_ALL(:,:,N1)
+
+   IF(RIVER_TS_SETTING == 'calculated') THEN
+     IF(RIVER_INFLOW_LOCATION == 'node') THEN
+       IF(NUMQBC > 0) THEN
+         DO J=1,NUMQBC
+           JJ=INODEQ(J)
+           STPOINT=BIODIS(J,N1)+OFFS(1,1,1)
+           DO K=1,KBM1
+	    BIO_FRESH(JJ,K)=BIODIS(J,N1)+ OFFS(1,1,1)  
+            XFLUX(JJ,K,N1)=XFLUX(JJ,K,N1) - QDIS(J)*VQDIST(J,K)*STPOINT
+           END DO
+         END DO
+       END IF
+     ELSE IF(RIVER_INFLOW_LOCATION == 'edge') THEN
+       IF(NUMQBC > 0) THEN
+         DO J=1,NUMQBC
+           J1=N_ICELLQ(J,1)
+           J2=N_ICELLQ(J,2)
+           STPOINT=BIODIS(J,N1)+OFFS(1,1,1) 
+           DO K=1,KBM1
+             BIO_FRESH(J1,K)=BIODIS(J,N1)+OFFS(1,1,1)
+             BIO_FRESH(J2,K)=BIODIS(J,N1)+OFFS(1,1,1)
+             XFLUX(J1,K,N1)=XFLUX(J1,K,N1)-QDIS(J)*RDISQ(J,1)*VQDIST(J,K)*STPOINT
+             XFLUX(J2,K,N1)=XFLUX(J2,K,N1)-QDIS(J)*RDISQ(J,2)*VQDIST(J,K)*STPOINT
+           END DO
+         END DO
+       END IF
+     END IF
+   END IF
+!
+
+! The horizontal term of advection is neglected here
+   DO K=1,KBM1
+     DO I=1,M
+       IF(ISONB(I) == 2) THEN
+         XFLUX(I,K,N1)=0._SP
+       ENDIF
+     END DO
+   END DO
+
+! Initialize variables of MPDATA
+   WQM_S=0._SP
+   WQM_SF=0._SP
+   WWWS=0._SP
+   WWWSF=0._SP
+   DTWWWS=0._SP
+   ZZZFLUX=0._SP
+   BETA=0._SP
+   BETAIN=0._SP
+   BETAOUT=0._SP
+
+!!   first loop for vertical upwind
+!!   flux including horizontal and vertical upwind
+   DO K=1,KBM1
+     DO I=1,M
+#    if defined (WET_DRY)
+       IF(ISWETN(I)*ISWETNT(I) == 1) THEN
+#    endif
+         IF(K == 1) THEN
+           TEMP = -(WTS(I,K+1)-ABS(WTS(I,K+1)))*BIO_ALL(I,K,N1)   &
+                  -(WTS(I,K+1)+ABS(WTS(I,K+1)))*BIO_ALL(I,K+1,N1) &
+                  +(WTS(I,K)+ABS(WTS(I,K)))*BIO_ALL(I,K,N1)    
+         ELSE IF(K == KBM1) THEN
+           TEMP = +(WTS(I,K)-ABS(WTS(I,K)))*BIO_ALL(I,K-1,N1)     &
+                  +(WTS(I,K)+ABS(WTS(I,K)))*BIO_ALL(I,K,N1)
+         ELSE
+           TEMP = -(WTS(I,K+1)-ABS(WTS(I,K+1)))*BIO_ALL(I,K,N1)   &
+                  -(WTS(I,K+1)+ABS(WTS(I,K+1)))*BIO_ALL(I,K+1,N1) &
+                  +(WTS(I,K)-ABS(WTS(I,K)))*BIO_ALL(I,K-1,N1)     &
+                  +(WTS(I,K)+ABS(WTS(I,K)))*BIO_ALL(I,K,N1)
+         END IF
+         TEMP = 0.5_SP*TEMP 
+
+         IF(K == 1)THEN
+           WQMMAX = MAXVAL(BIO_ALL(NBSN(I,1:NTSN(I)),K,N1))
+           WQMMIN = MINVAL(BIO_ALL(NBSN(I,1:NTSN(I)),K,N1))
+           WQMMAX = MAX(WQMMAX,BIO_ALL(I,K+1,N1),BIO_ALL(I,K,N1),BIO_FRESH(I,K))
+           WQMMIN = MIN(WQMMIN,BIO_ALL(I,K+1,N1),BIO_ALL(I,K,N1),BIO_FRESH(I,K))
+         ELSEIF(K == KBM1) THEN
+           WQMMAX = MAXVAL(BIO_ALL(NBSN(I,1:NTSN(I)),K,N1))
+           WQMMIN = MINVAL(BIO_ALL(NBSN(I,1:NTSN(I)),K,N1))
+           WQMMAX = MAX(WQMMAX,BIO_ALL(I,K-1,N1),BIO_ALL(I,K,N1),BIO_FRESH(I,K))
+           WQMMIN = MIN(WQMMIN,BIO_ALL(I,K-1,N1),BIO_ALL(I,K,N1),BIO_FRESH(I,K))
+         ELSE
+           WQMMAX = MAXVAL(BIO_ALL(NBSN(I,1:NTSN(I)),K,N1))
+           WQMMIN = MINVAL(BIO_ALL(NBSN(I,1:NTSN(I)),K,N1))
+           WQMMAX = MAX(WQMMAX,BIO_ALL(I,K+1,N1),BIO_ALL(I,K-1,N1),BIO_ALL(I,K,N1),BIO_FRESH(I,K))
+           WQMMIN = MIN(WQMMIN,BIO_ALL(I,K+1,N1),BIO_ALL(I,K-1,N1),BIO_ALL(I,K,N1),BIO_FRESH(I,K))
+         END IF
+
+         ! Total (horizontal + vertical) flux to the cell
+         ZZZFLUX(I,K) = TEMP*(DTI/DT(I))/DZ(I,K) + XFLUX(I,K,N1)/ART1(I)*(DTI/DT(I))/DZ(I,K) 
+
+         ! Updated variable without limiter minus current variable
+         XXXX = ZZZFLUX(I,K)*DT(I)/DTFA(I)+BIO_ALL(I,K,N1)-BIO_ALL(I,K,N1)*DT(I)/DTFA(I) 
+
+           ! Added by Akvaplan 2018 to avoid single precision-crash
+         IF((ABS(XXXX).LT.ABS(WQMMAX-BIO_ALL(I,K,N1))).AND.(XXXX.LT.0.0_SP)) THEN
+            WQM_SF(I,K) = BIO_ALL(I,K,N1)-XXXX
+         ELSE IF((ABS(XXXX).LT.ABS(WQMMIN-BIO_ALL(I,K,N1))).AND.(XXXX.GT.0.0_SP)) THEN 
+            WQM_SF(I,K) = BIO_ALL(I,K,N1)-XXXX
+         ELSE IF(XXXX.EQ.0) THEN
+            WQM_SF(I,K) = BIO_ALL(I,K,N1)
+         ELSE
+            BETA(I,K)=0.5*(1.-SIGN(1._SP,XXXX)) * (WQMMAX-BIO_ALL(I,K,N1))/(ABS(XXXX)+1.E-10) &                               
+                 +0.5*(1.-SIGN(1._SP,-XXXX)) * (BIO_ALL(I,K,N1)-WQMMIN)/(ABS(XXXX)+1.E-10)                                     
+            WQM_SF(I,K)=BIO_ALL(I,K,N1)-MIN(1._SP,BETA(I,K))*XXXX
+         END IF
+
+#    if defined (WET_DRY)
+       END IF
+#    endif
+     END DO
+   END DO  !! SIGMA LOOP
+
+!----------------------------------------------------------------------------------------
+   NTERA = 4
+   DO ITERA=1,NTERA   !! Smolaricizw Loop 
+     IF(ITERA == 1)THEN
+       WWWSF  = WTS
+       WQM_S   = WQM_SF
+       DTWWWS = DT
+     ELSE
+       WWWSF  = WWWS
+       WQM_S   = WQM_SF
+       DTWWWS = DTFA
+     END IF
+     DO K=2,KBM1
+       DO I=1,M
+         TEMP=ABS(WWWSF(I,K))-DTI*(WWWSF(I,K))*(WWWSF(I,K))/DZ(I,K)/DTWWWS(I)
+         WWWS(I,K)=TEMP*(WQM_S(I,K-1)-WQM_S(I,K))/(ABS(WQM_S(I,K-1))+ABS(WQM_S(I,K))+1.E-14)
+
+         IF(TEMP < 0.0_SP .OR. WQM_S(I,K) == 0.0_SP)THEN 
+           WWWS(I,K)=0.0_SP 
+         END IF
+       END DO 
+     END DO
+
+     DO I=1,M
+       WWWS(I,1)=0.0_SP
+     END DO
+
+     DO I=1,M
+       WQMMAX = MAXVAL(BIO_ALL(NBSN(I,1:NTSN(I)),1,N1))
+       WQMMIN = MINVAL(BIO_ALL(NBSN(I,1:NTSN(I)),1,N1))
+       WQMMAX = MAX(WQMMAX,BIO_ALL(I,2,N1),BIO_ALL(I,1,N1),BIO_FRESH(I,1))
+       WQMMIN = MIN(WQMMIN,BIO_ALL(I,2,N1),BIO_ALL(I,1,N1),BIO_FRESH(I,1))
+ 
+       TEMP=0.5*((WWWS(I,2)+ABS(WWWS(I,2)))*WQM_S(I,2))*(DTI/DTFA(I))/DZ(I,1)
+       BETAIN(I,1)=(WQMMAX-WQM_S(I,1))/(TEMP+1.E-10)
+
+       TEMP=0.5*((WWWS(I,1)+ABS(WWWS(I,1)))*WQM_S(I,1)-        &
+	         (WWWS(I,2)-ABS(WWWS(I,2)))*WQM_S(I,1))*(DTI/DTFA(I))/DZ(I,1)
+       BETAOUT(I,1)=(WQM_S(I,1)-WQMMIN)/(TEMP+1.E-10)
+
+       WWWSF(I,1)=0.5*MIN(1.,BETAOUT(I,1))*(WWWS(I,1)+ABS(WWWS(I,1))) + &
+                  0.5*MIN(1.,BETAIN(I,1))*(WWWS(I,1)-ABS(WWWS(I,1)))
+     END DO
+
+     DO K=2,KBM1-1
+       DO I=1,M
+         WQMMAX = MAXVAL(BIO_ALL(NBSN(I,1:NTSN(I)),K,N1))
+         WQMMIN = MINVAL(BIO_ALL(NBSN(I,1:NTSN(I)),K,N1))
+         WQMMAX = MAX(WQMMAX,BIO_ALL(I,K+1,N1),BIO_ALL(I,K-1,N1),BIO_ALL(I,K,N1),BIO_FRESH(I,K))
+         WQMMIN = MIN(WQMMIN,BIO_ALL(I,K+1,N1),BIO_ALL(I,K-1,N1),BIO_ALL(I,K,N1),BIO_FRESH(I,K))
+
+         TEMP=0.5*((WWWS(I,K+1)+ABS(WWWS(I,K+1)))*WQM_S(I,K+1)-  &
+	           (WWWS(I,K)-ABS(WWWS(I,K)))*WQM_S(I,K-1))*(DTI/DTFA(I))/DZ(I,K)
+         BETAIN(I,K)=(WQMMAX-WQM_S(I,K))/(TEMP+1.E-10)
+
+         TEMP=0.5*((WWWS(I,K)+ABS(WWWS(I,K)))*WQM_S(I,K)-        &
+	           (WWWS(I,K+1)-ABS(WWWS(I,K+1)))*WQM_S(I,K))*(DTI/DTFA(I))/DZ(I,K)
+         BETAOUT(I,K)=(WQM_S(I,K)-WQMMIN)/(TEMP+1.E-10)
+
+         WWWSF(I,K)=0.5*MIN(1.,BETAIN(I,K-1),BETAOUT(I,K))*(WWWS(I,K)+ABS(WWWS(I,K))) + &
+                    0.5*MIN(1.,BETAIN(I,K),BETAOUT(I,K-1))*(WWWS(I,K)-ABS(WWWS(I,K)))
+       END DO
+     END DO
+
+     K=KBM1
+     DO I=1,M
+       WQMMAX = MAXVAL(BIO_ALL(NBSN(I,1:NTSN(I)),K,N1))
+       WQMMIN = MINVAL(BIO_ALL(NBSN(I,1:NTSN(I)),K,N1))
+       WQMMAX = MAX(WQMMAX,BIO_ALL(I,K-1,N1),BIO_ALL(I,K,N1),BIO_FRESH(I,K))
+       WQMMIN = MIN(WQMMIN,BIO_ALL(I,K-1,N1),BIO_ALL(I,K,N1),BIO_FRESH(I,K))
+
+       TEMP=0.5*((WWWS(I,K+1)+ABS(WWWS(I,K+1)))*WQM_S(I,K+1)-  &
+	         (WWWS(I,K)-ABS(WWWS(I,K)))*WQM_S(I,K-1))*(DTI/DTFA(I))/DZ(I,K)
+       BETAIN(I,K)=(WQMMAX-WQM_S(I,K))/(TEMP+1.E-10)
+
+       TEMP=0.5*((WWWS(I,K)+ABS(WWWS(I,K)))*WQM_S(I,K)-        &
+	         (WWWS(I,K+1)-ABS(WWWS(I,K+1)))*WQM_S(I,K))*(DTI/DTFA(I))/DZ(I,K)
+       BETAOUT(I,K)=(WQM_S(I,K)-WQMMIN)/(TEMP+1.E-10)
+
+       WWWSF(I,K)=0.5*MIN(1.,BETAIN(I,K-1),BETAOUT(I,K))*(WWWS(I,K)+ABS(WWWS(I,K))) + &
+                  0.5*MIN(1.,BETAIN(I,K),BETAOUT(I,K-1))*(WWWS(I,K)-ABS(WWWS(I,K)))
+     END DO
+
+     WWWS=WWWSF 
+
+     DO K=1,KBM1
+       DO I=1,M
+#      if defined (WET_DRY)
+         IF(ISWETN(I)*ISWETNT(I) == 1) THEN
+#      endif
+           IF(K == 1) THEN
+             TEMP = -(WWWS(I,K+1)-ABS(WWWS(I,K+1)))*WQM_S(I,K)   &
+                    -(WWWS(I,K+1)+ABS(WWWS(I,K+1)))*WQM_S(I,K+1) &
+                    +(WWWS(I,K)+ABS(WWWS(I,K)))*WQM_S(I,K)
+           ELSE IF(K == KBM1) THEN
+             TEMP = +(WWWS(I,K)-ABS(WWWS(I,K)))*WQM_S(I,K-1)     &
+                    +(WWWS(I,K)+ABS(WWWS(I,K)))*WQM_S(I,K)
+           ELSE
+             TEMP = -(WWWS(I,K+1)-ABS(WWWS(I,K+1)))*WQM_S(I,K)   &
+                    -(WWWS(I,K+1)+ABS(WWWS(I,K+1)))*WQM_S(I,K+1) &
+                    +(WWWS(I,K)-ABS(WWWS(I,K)))*WQM_S(I,K-1)     &
+                    +(WWWS(I,K)+ABS(WWWS(I,K)))*WQM_S(I,K)
+           END IF
+           TEMP = 0.5_SP*TEMP
+           WQM_SF(I,K)=(WQM_S(I,K)-TEMP*(DTI/DTFA(I))/DZ(I,K)) 
+#      if defined (WET_DRY)
+         END IF
+#      endif
+       END DO
+     END DO  !! SIGMA LOOP
+   END DO  !! Smolarvizw Loop
+!--------------------------------------------------------------------------
+! End of smolarkiewicz upwind loop
+!--------------------------------------------------------------------------
+      BIO_ALL(:,:,N1) = BIO_ALL(:,:,N1)-OFFS(1,1,1)
+      WQM_SF = WQM_SF-OFFS(1,1,1)
+      BIO_MEAN(:,:,N1) = BIO_MEAN(:,:,N1)-OFFS(1,1,1)
+     
+#  endif
+
 #  if !defined (MPDATA)
 !
 !--Calculate the Vertical Terms------------------------------------------------
@@ -444,7 +766,7 @@ END SUBROUTINE BIO_3D1D
 #      if defined (WET_DRY)
        IF(ISWETN(I)*ISWETNT(I) == 1) THEN
 #      endif
-         IF(K == 1) THEN  !Is there any violation ?
+         IF(K == 1) THEN  
            TEMP=-WTS(I,K+1)*(BIO_ALL(I,K,N1)*DZ(I,K+1)+BIO_ALL(I,K+1,N1)*DZ(I,K))/   &
 	         (DZ(I,K)+DZ(I,K+1))
          ELSE IF(K == KBM1) THEN
@@ -489,7 +811,7 @@ END SUBROUTINE BIO_3D1D
            DO J=1,NUMQBC
              J1=N_ICELLQ(J,1)
              J2=N_ICELLQ(J,2)
-             STPOINT=BIODIS(J,N1) !!ASK LIU SHOULD THIS BE STPOINT1(J1)/STPOINT2(J2)
+             STPOINT=BIODIS(J,N1) 
              DO K=1,KBM1
                XFLUX(J1,K,N1)=XFLUX(J1,K,N1)-QDIS(J)*RDISQ(J,1)*VQDIST(J,K)*STPOINT
                XFLUX(J2,K,N1)=XFLUX(J2,K,N1)-QDIS(J)*RDISQ(J,2)*VQDIST(J,K)*STPOINT
@@ -498,215 +820,7 @@ END SUBROUTINE BIO_3D1D
          END IF
        END IF
      END IF
-
-#  else
-!--------------------------------------------------------------------------------
-!   S. HU
-!   Using smolarkiewicz, P. K; A fully multidimensional positive definite advection
-!   TEMPport algorithm with small implicit diffusion, Journal of Computational
-!   Physics, 54, 325-362, 1984
-!-----------------------------------------------------------------        
-
-	BIO_FRESH=BIO_ALL(:,:,N1)
-
-   IF(RIVER TS_SETTING == 'calculated') THEN
-     IF(RIVER_INFLOW_LOCATION == 'node') THEN
-       IF(NUMQBC > 0) THEN
-         DO J=1,NUMQBC
-           JJ=INODEQ(J)
-           STPOINT=BIODIS(J)
-           DO K=1,KBM1
-!	    S1_FRESH(JJ,K)=SDIS(J)   !NEED TO CHANGE FROM S TO BIO
-            XFLUX(JJ,K,N1)=XFLUX(JJ,K,N1) - QDIS(J)*VQDIST(J,K)*STPOINT
-           END DO
-         END DO
-       END IF
-     ELSE IF(RIVER_INFLOW_LOCATION == 'edge') THEN
-       IF(NUMQBC > 0) THEN
-         DO J=1,NUMQBC
-           J1=N_ICELLQ(J,1)
-           J2=N_ICELLQ(J,2)
-           STPOINT=BIODIS(J) !!ASK LIU SHOULD THIS BE STPOINT1(J1)/STPOINT2(J2)
-           DO K=1,KBM1
-!             S1_FRESH(J1,K)=SDIS(J)  !NEED BIO CONCENTRATION
-!             S1_FRESH(J1,K)=SDIS(J)
-             XFLUX(J1,K,N1)=XFLUX(J1,K,N1)-QDIS(J)*RDISQ(J,1)*VQDIST(J,K)*STPOINT
-             XFLUX(J2,K,N1)=XFLUX(J2,K,N1)-QDIS(J)*RDISQ(J,2)*VQDIST(J,K)*STPOINT
-           END DO
-         END DO
-       END IF
-     END IF
-   END IF
-!
-
-! The horizontal term of advection is neglected here
-   DO K=1,KBM1
-     DO I=1,M
-       IF(ISONB(I) == 2) THEN
-         XFLUX(I,K,N1)=0.
-       ENDIF
-     END DO
-   END DO
-
-! Initialize variables of MPDATA
-   WQM_S=0._SP
-   WQM_SF=0._SP
-   WWWS=0._SP
-   WWWSF=0._SP
-   DTWWWS=0._SP
-   ZZZFLUX=0._SP
-   BETA=0._SP
-   BETAIN=0._SP
-   BETAOUT=0._SP
-
-!!   first loop for vertical upwind
-!!   flux including horizontal and vertical upwind
-   DO K=1,KBM1
-     DO I=1,M
-#    if defined (WET_DRY)
-       IF(ISWETN(I)*ISWETNT(I) == 1) THEN
-#    endif
-         IF(K == 1) THEN
-           TEMP = -(WTS(I,K+1)-ABS(WTS(I,K+1)))*BIO_ALL(I,K,N1)   &
-                  -(WTS(I,K+1)+ABS(WTS(I,K+1)))*BIO_ALL(I,K+1,N1) &
-                  +(WTS(I,K)+ABS(WTS(I,K)))*BIO_ALL(I,K,N1)    
-         ELSE IF(K == KBM1) THEN
-           TEMP = +(WTS(I,K)-ABS(WTS(I,K)))*BIO_ALL(I,K-1,N1)     &
-                  +(WTS(I,K)+ABS(WTS(I,K)))*BIO_ALL(I,K,N1)
-         ELSE
-           TEMP = -(WTS(I,K+1)-ABS(WTS(I,K+1)))*BIO_ALL(I,K,N1)   &
-                  -(WTS(I,K+1)+ABS(WTS(I,K+1)))*BIO_ALL(I,K+1,N1) &
-                  +(WTS(I,K)-ABS(WTS(I,K)))*BIO_ALL(I,K-1,N1)     &
-                  +(WTS(I,K)+ABS(WTS(I,K)))*BIO_ALL(I,K,N1)
-         END IF
-         TEMP = 0.5_SP*TEMP 
-
-         IF(K /= 1)THEN
-           WQMMAX = MAXVAL(BIO_ALL(NBSN(I,1:NTSN(I)),K,N1))
-           WQMMIN = MINVAL(BIO_ALL(NBSN(I,1:NTSN(I)),K,N1))
-!           WQMMAX = MAX(WQMMAX,BIO_ALL(I,K+1,N1),BIO_ALL(I,K-1,N1),BIO_FRESH(I,K,N1))
-!           WQMMIN = MIN(WQMMIN,BIO_ALL(I,K+1,N1),BIO_ALL(I,K-1,N1),BIO_FRESH(I,K,N1))
-           WQMMAX = MAX(WQMMAX,BIO_ALL(I,K+1,N1),BIO_ALL(I,K-1,N1),BIO_FRESH(I,K))
-           WQMMIN = MIN(WQMMIN,BIO_ALL(I,K+1,N1),BIO_ALL(I,K-1,N1),BIO_FRESH(I,K))
-         ELSE
-           WQMMAX = MAXVAL(BIO_ALL(NBSN(I,1:NTSN(I)),K,N1))
-           WQMMIN = MINVAL(BIO_ALL(NBSN(I,1:NTSN(I)),K,N1))
-!           WQMMAX = MAX(WQMMAX,BIO_ALL(I,K+1,N1),BIO_FRESH(I,K,N1))
-!           WQMMIN = MIN(WQMMIN,BIO_ALL(I,K+1,N1),BIO_FRESH(I,K,N1))
-           WQMMAX = MAX(WQMMAX,BIO_ALL(I,K+1,N1),BIO_FRESH(I,K))
-           WQMMIN = MIN(WQMMIN,BIO_ALL(I,K+1,N1),BIO_FRESH(I,K))
-         END IF
-
-         ZZZFLUX(I,K) = TEMP*(DTI/DT(I))/DZ(I,K) + XFLUX(I,K,N1)/ART1(I)*(DTI/DT(I))/DZ(I,K) 
-         XXXX = ZZZFLUX(I,K)*DT(I)/DTFA(I)+BIO_ALL(I,K,N1)-BIO_ALL(I,K,N1)*DT(I)/DTFA(I) 
-
-         BETA(I,K)=0.5*(1.-SIGN(1.,XXXX)) * (WQMMAX-BIO_ALL(I,K,N1))/(ABS(XXXX)+1.E-10) &
-                  +0.5*(1.-SIGN(1.,-XXXX)) * (BIO_ALL(I,K,N1)-WQMMIN)/(ABS(XXXX)+1.E-10)
-
-         WQM_SF(I,K)=BIO_ALL(I,K,N1)-MIN(1.,BETA(I,K))*XXXX
-
-#    if defined (WET_DRY)
-       END IF
-#    endif
-     END DO
-   END DO  !! SIGMA LOOP
-
-!----------------------------------------------------------------------------------------
-   NTERA = 4
-   DO ITERA=1,NTERA   !! Smolaricizw Loop 
-     IF(ITERA == 1)THEN
-       WWWSF  = WTS
-       WQM_S   = WQM_SF
-       DTWWWS = DT
-     ELSE
-       WWWSF  = WWWS
-       WQM_S   = WQM_SF
-       DTWWWS = DTFA
-     END IF
-     DO K=2,KBM1
-       DO I=1,M
-         TEMP=ABS(WWWSF(I,K))-DTI*(WWWSF(I,K))*(WWWSF(I,K))/DZ(I,K)/DTWWWS(I)
-         WWWS(I,K)=TEMP*(WQM_S(I,K-1)-WQM_S(I,K))/(ABS(WQM_S(I,K-1))+ABS(WQM_S(I,K))+1.E-14)
-
-         IF(TEMP < 0.0_SP .OR. WQM_S(I,K) == 0.0_SP)THEN 
-           WWWS(I,K)=0. 
-         END IF
-       END DO 
-     END DO
-
-     DO I=1,M
-       WWWS(I,1)=0.
-     END DO
-
-     DO I=1,M
-       WQMMAX = MAXVAL(BIO_ALL(NBSN(I,1:NTSN(I)),1,N1))
-       WQMMIN = MINVAL(BIO_ALL(NBSN(I,1:NTSN(I)),1,N1))
-       WQMMAX = MAX(WQMMAX,BIO_ALL(I,2,N1),BIO_ALL(I,1,N1),BIO_FRESH(I,1))
-       WQMMIN = MIN(WQMMIN,BIO_ALL(I,2,N1),BIO_ALL(I,1,N1),BIO_FRESH(I,1))
- 
-       TEMP=0.5*((WWWS(I,2)+ABS(WWWS(I,2)))*WQM_S(I,2))*(DTI/DTFA(I))/DZ(I,1)
-       BETAIN(I,1)=(WQMMAX-WQM_S(I,1))/(TEMP+1.E-10)
-
-       TEMP=0.5*((WWWS(I,1)+ABS(WWWS(I,1)))*WQM_S(I,1)-        &
-	           (WWWS(I,2)-ABS(WWWS(I,2)))*WQM_S(I,1))*(DTI/DTFA(I))/DZ(I,1)
-       BETAOUT(I,1)=(WQM_S(I,1)-WQMMIN)/(TEMP+1.E-10)
-
-       WWWSF(I,1)=0.5*MIN(1.,BETAOUT(I,1))*(WWWS(I,1)+ABS(WWWS(I,1))) + &
-                    0.5*MIN(1.,BETAIN(I,1))*(WWWS(I,1)-ABS(WWWS(I,1)))
-     END DO
-
-     DO K=2,KBM1
-       DO I=1,M
-         WQMMAX = MAXVAL(BIO_ALL(NBSN(I,1:NTSN(I)),K,N1))
-         WQMMIN = MINVAL(BIO_ALL(NBSN(I,1:NTSN(I)),K,N1))
-         WQMMAX = MAX(WQMMAX,BIO_ALL(I,K+1,N1),BIO_ALL(I,K-1,N1),BIO_FRESH(I,K))
-         WQMMIN = MIN(WQMMIN,BIO_ALL(I,K+1,N1),BIO_ALL(I,K-1,N1),BIO_FRESH(I,K))
-
-         TEMP=0.5*((WWWS(I,K+1)+ABS(WWWS(I,K+1)))*WQM_S(I,K+1)-  &
-	           (WWWS(I,K)-ABS(WWWS(I,K)))*WQM_S(I,K-1))*(DTI/DTFA(I))/DZ(I,K)
-         BETAIN(I,K)=(WQMMAX-WQM_S(I,K))/(TEMP+1.E-10)
-
-         TEMP=0.5*((WWWS(I,K)+ABS(WWWS(I,K)))*WQM_S(I,K)-        &
-	           (WWWS(I,K+1)-ABS(WWWS(I,K+1)))*WQM_S(I,K))*(DTI/DTFA(I))/DZ(I,K)
-         BETAOUT(I,K)=(WQM_S(I,K)-WQMMIN)/(TEMP+1.E-10)
-
-         WWWSF(I,K)=0.5*MIN(1.,BETAIN(I,K-1),BETAOUT(I,K))*(WWWS(I,K)+ABS(WWWS(I,K))) + &
-                    0.5*MIN(1.,BETAIN(I,K),BETAOUT(I,K-1))*(WWWS(I,K)-ABS(WWWS(I,K)))
-       END DO
-     END DO
-
-     WWWS=WWWSF 
-
-     DO K=1,KBM1
-       DO I=1,M
-#      if defined (WET_DRY)
-         IF(ISWETN(I)*ISWETNT(I) == 1) THEN
-#      endif
-           IF(K == 1) THEN
-             TEMP = -(WWWS(I,K+1)-ABS(WWWS(I,K+1)))*WQM_S(I,K)   &
-                    -(WWWS(I,K+1)+ABS(WWWS(I,K+1)))*WQM_S(I,K+1) &
-                    +(WWWS(I,K)+ABS(WWWS(I,K)))*WQM_S(I,K)
-           ELSE IF(K == KBM1) THEN
-             TEMP = +(WWWS(I,K)-ABS(WWWS(I,K)))*WQM_S(I,K-1)     &
-                    +(WWWS(I,K)+ABS(WWWS(I,K)))*WQM_S(I,K)
-           ELSE
-             TEMP = -(WWWS(I,K+1)-ABS(WWWS(I,K+1)))*WQM_S(I,K)   &
-                    -(WWWS(I,K+1)+ABS(WWWS(I,K+1)))*WQM_S(I,K+1) &
-                    +(WWWS(I,K)-ABS(WWWS(I,K)))*WQM_S(I,K-1)     &
-                    +(WWWS(I,K)+ABS(WWWS(I,K)))*WQM_S(I,K)
-           END IF
-           TEMP = 0.5_SP*TEMP
-           WQM_SF(I,K)=(WQM_S(I,K)-TEMP*(DTI/DTFA(I))/DZ(I,K)) 
-#      if defined (WET_DRY)
-         END IF
-#      endif
-       END DO
-     END DO  !! SIGMA LOOP
-   END DO  !! Smolarvizw Loop
-!--------------------------------------------------------------------------
-! End of smolarkiewicz upwind loop
-!--------------------------------------------------------------------------
-#  endif
+# endif
 
 !--Update Variables--------------------------------
 !
@@ -716,10 +830,11 @@ END SUBROUTINE BIO_3D1D
        IF(ISWETN(I)*ISWETNT(I) == 1 )THEN
          DO K = 1, KBM1
        XFLUX(I,K,N1) = XFLUX(I,K,N1) - RF(I,K,N1)*ART1(I)     !/DZ(K)
-#        if !defined (MPDATA) 
+#    if !defined (MPDATA) 
            BIO_F(I,K,N1)=(BIO_ALL(I,K,N1)-XFLUX(I,K,N1)/ART1(I)*(DTI/(DT(I)*DZ(I,K))))*   &
-                         (DT(I)/D(I)) 
-#        else
+                         (DT(I)/DTFA(I)) 
+!JQI 04/29/2019 D(I) -> DTFA   (DT(I)/D(I)) 
+#    else
            BIO_F(I,K,N1)=WQM_SF(I,K)
 #    endif  		 			 
          END DO 
@@ -731,16 +846,17 @@ END SUBROUTINE BIO_3D1D
      END DO
 #    else
      DO I = 1,M
-         DO K = 1, KBM1
-       XFLUX(I,K,N1) = XFLUX(I,K,N1) - RF(I,K,N1)*ART1(I)     !/DZ(K)
-#        if !defined (MPDATA) 
-           BIO_F(I,K,N1)=(BIO_ALL(I,K,N1)-XFLUX(I,K,N1)/ART1(I)*(DTI/(DT(I)*DZ(I,K))))*   &
-                         (DT(I)/D(I)) 
-#        else
-           BIO_F(I,K,N1)=WQM_SF(I,K)
-#        endif  		 			 
-         END DO 
-       END DO	 
+       DO K = 1, KBM1
+         XFLUX(I,K,N1) = XFLUX(I,K,N1) - RF(I,K,N1)*ART1(I)     !/DZ(K)
+#    if !defined (MPDATA) 
+         BIO_F(I,K,N1)=(BIO_ALL(I,K,N1)-XFLUX(I,K,N1)/ART1(I)*(DTI/(DT(I)*DZ(I,K))))*   &
+                       (DT(I)/DTFA(I)) 
+!JQI 04/29/2019 D(I) -> DTFA    (DT(I)/D(I)) 
+#    else
+         BIO_F(I,K,N1)=WQM_SF(I,K)
+#    endif  		 			 
+       END DO 
+     END DO	 
 #    endif
    END DO !do N1=1,ntt
    RETURN
@@ -917,6 +1033,7 @@ SUBROUTINE BIO_EXCHANGE
 
 
 
+
    SUBROUTINE BIO_INITIAL
 !=============================================================================!
 ! THS PROGRAM INITIALIZES THE 3D BIOLOGICAL FIELD FOR THE GENERALIZED         !
@@ -936,6 +1053,7 @@ SUBROUTINE BIO_EXCHANGE
       IMPLICIT NONE
       INTEGER :: I,J,K,LL,N_DATA
       CHARACTER(LEN=80) :: ISTR
+!L3 change LEN=2, for double digit number of state vars
       CHARACTER(LEN=2)  :: BIO_NUMBER
       CHARACTER(LEN=10) :: INI_TYPE
       REAL(SP), DIMENSION(KBM1)    :: ZM           !GRID DEPTH
@@ -943,6 +1061,8 @@ SUBROUTINE BIO_EXCHANGE
       REAL(SP), DIMENSION(500)     :: DATA_BIO     !STANDARD DATA FOR LINEAR INTERPOLATION
       REAL(SP), DIMENSION(KB)      :: DATA_INT     !INTERPOLDATED VALUES
 
+      INTEGER KSL      
+      REAL(SP), ALLOCATABLE :: DPTHSL(:)
       REAL(SP), ALLOCATABLE,DIMENSION(:,:) :: TEMPB        !TEMPERAL FOR DATA INPUT
       REAL(SP), ALLOCATABLE,DIMENSION(:,:) :: DATA_3D      !3D OBSERVATION DATA
 
@@ -953,42 +1073,52 @@ SUBROUTINE BIO_EXCHANGE
       ALLOCATE(BIO_MEANN(0:NT,KB,NTT))  ; BIO_MEANN   =  0.001_SP
       ALLOCATE(BIO_VAR_MEAN(0:MT,KB,NTT)) ; BIO_VAR_MEAN   =  0.0_SP
 
-IF(DBG_SET(DBG_SBR)) WRITE(IPT,*)"Start DETRITIS INITIAL CONDITIONS"
-!*********      DETRITUS INITIAL CONDITIONS   *************
-      DO LL=1,NND
-        WRITE(BIO_NUMBER,'(I1.1)')LL
-        OPEN(1,FILE=TRIM(INPUT_DIR)//'/DETRITUS_INI_'//TRIM(BIO_NUMBER)//'.dat',STATUS='old')
+!*********      NUTRIENT INITIAL CONDITIONS   *************
+      DO LL=1,NTT
+
+!L3, for more than 10 state vars
+        if(LL.lt.10) then
+          WRITE(BIO_NUMBER,'(I1)')LL
+        else
+          WRITE(BIO_NUMBER,'(I2)')LL
+        endif
+!L3 end modification
+        OPEN(1,FILE=TRIM(INPUT_DIR)//'/NUTRIENT_INI_'//TRIM(BIO_NUMBER)//'.dat',STATUS='old')
         READ(1,*)INI_TYPE
         IF (TRIM(INI_TYPE).EQ.'CONSTANT') THEN
           READ(1,*)DATA_BIO(1)
           DO I=1,M
             DO K=1,KB
-              BIO_ALL(I,K,LL+IND-1)=DATA_BIO(1)
+              BIO_ALL(I,K,LL)=DATA_BIO(1)
             END DO
           END DO
         END IF
         IF (TRIM(INI_TYPE).EQ.'LINEAR') THEN
           N_DATA=1
- 61       READ(1,*,END=62)DEPTH_STD(N_DATA),DATA_BIO(N_DATA)
+ 11       READ(1,*,END=12)DEPTH_STD(N_DATA),DATA_BIO(N_DATA)
           N_DATA=N_DATA+1
-          GO TO 61
- 62       N_DATA=N_DATA-1
+          GO TO 11
+ 12       N_DATA=N_DATA-1
           DO I=1,M
             DO K= 1,KBM1
-              ZM(K) =ZZ(I,K)*D(I)+EL(I)
+              ZM(K) =ZZ(I,K)*(D(I)+EL(I))
             END DO
             CALL SINTER_BIO(DEPTH_STD,DATA_BIO,ZM,DATA_INT,N_DATA,KBM1)
             DO K =1,KBM1
-              BIO_ALL(I,K,LL+IND-1) = DATA_INT(K)
+              BIO_ALL(I,K,LL) = DATA_INT(K)
             END DO
           END DO
         END IF !LINEAR
 
         IF (TRIM(INI_TYPE).EQ.'DATA') THEN
-	  ALLOCATE(TEMPB(MGL,KBM1))
-	  ALLOCATE(DATA_3D(M,KBM1))
+	  ALLOCATE(DPTHSL(KSL))
+	  ALLOCATE(TEMPB(MGL,KSL))
+	  ALLOCATE(DATA_3D(M,KSL))
+	  READ(1,*) KSL
+          READ(1,*) (DPTHSL(K),K=1,KSL)
+
           DO I=1,MGL 
-            READ(1,*) (TEMPB(I,K), K=1,KBM1)
+            READ(1,*) (TEMPB(I,K), K=1,KSL)
           END DO
 
           IF(SERIAL)THEN
@@ -998,35 +1128,32 @@ IF(DBG_SET(DBG_SBR)) WRITE(IPT,*)"Start DETRITIS INITIAL CONDITIONS"
 #   if defined (MULTIPROCESSOR)
           IF(PAR)THEN
             DO I=1,M
-              DATA_3D(I,1:KBM1) = TEMPB(NGID(I),1:KBM1)
+              DATA_3D(I,1:KSL) = TEMPB(NGID(I),1:KSL)
             END DO
           END IF
 #    endif
-
           DO I=1,M
-            DO K=1,KBM1
+            DO K=1,KSL
               DATA_BIO(K)=DATA_3D(I,K)
             END DO
             DO K= 1,KBM1
               ZM(K) =ZZ(I,K)*D(I)+EL(I)
             END DO
-               DATA_INT(1:KBM1) = DATA_BIO(1:KBM1) 
+            CALL SINTER_BIO(DPTHSL,DATA_BIO,ZM,DATA_INT,KSL,KBM1)
             DO K =1,KBM1
-              BIO_ALL(I,K,LL+IND-1) = DATA_INT(K)
+              BIO_ALL(I,K,LL) = DATA_INT(K)
             END DO
           END DO
+	  DEALLOCATE(DPTHSL,TEMPB,DATA_3D)
         END IF !DATA
-      END DO !L=1,NND; DETRITUS INITIALIZATION
+      END DO !L=1,NTT; NUTRIENT INITIALIZATION
 
-!mdr      WHERE (BIO_ALL < 0.001) BIO_ALL=0.001
+!L3      WHERE (BIO_ALL < 0.001) BIO_ALL=0.001
       BIO_MEAN=BIO_ALL   !3D ASSIGNMENT
-
 #    if defined (MULTIPROCESSOR)
       IF (PAR) CALL BIO_EXCHANGE
 #    endif
 !!$      CALL BIO_NETCDF_HEADER
-
-
    RETURN
 END SUBROUTINE BIO_INITIAL
 
@@ -1095,7 +1222,7 @@ SUBROUTINE BIO_HOT_START
             END DO
           END IF
 #    endif
-      END DO  !DO I=1,NND
+      END DO  !DO I=1,NNT
       BIO_MEAN=BIO_ALL
 #    if defined (MULTIPROCESSOR)
       IF (PAR) CALL BIO_EXCHANGE
