@@ -1,0 +1,5 @@
+1           !Number of vars
+"TP" "mg/L" !Name and units
+0.00        !Minimum value for TP 
+6.0e-7      !Sinking rate, m/s
+0           !1=sink out, 0=no sink out 

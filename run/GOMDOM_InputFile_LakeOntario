@@ -1,44 +1,5 @@
-"GoMDOM2k input file 9.9.16, Salinity ICBC, no Si flux" 		!Code_ID: Default - Oct 2016 (see spreadsheet)
-
-!Simulation Specifics
-2013     4     1     2      0     0		!- starting time Yr, Mon, Day, Hr, Min, Sec
-2013     5     1     2      0     0		!- ending   time Yr, Mon, Day, Hr, Min, Sec
-30 3600      	!- dT (timestep, secs); dT_out (output interval, secs); dT_restart (restart interval, secs)
-0		        !- How cell Location is specified:0==long-lat 1==grid-units
--92.39 29.03		!- Cell i,j coord (if grid-units) or longcent,latcent vals (if long-lat)
-
-!Switches in GEM
-0 0 0 0 0 0 0 0	0 !Which_Fluxes: Toggle on(1) off(0): O2surf, DICsurf, SOD, MPB, Nutrient Exchange, CMAQ, 
-                  !Instant Remineralization(1=with Flux, 2=just sinking), Sediment Diagenesis, Silica
-0 0 0 0		!ReadVars: Solar=Calculate(0),Read(1),Read PAR(2); Wind== 5mph(0) or Read(1), Temp== cosine w/params(0) or Read(1), Sal== Read one value(0) or Read(1) 
-0		!InitializeHow: 0==Read File, 1==Salinity Regression
-
-!Optics
-1		!Which_irradiance:(Light Model) 0==none, 1==GoMDOM 2==Brad 
-0.0375          !astar490: Chla specific absorption at 490 nm
-0.015           !aw490: seawater absorption at 490 nm
-0.0             !astarOMA: REUSE to set constant CDOM(ppb) 
-0.01            !astarOMZ: Zooplankton specific absorption at 490 nm
-0.01            !astarOMR: ROC specific absorption at 490 nm
-0.01            !astarOMBC: LOC specific absorption at 490 nm
-1.              !PARfac: Multiplies surface PAR
-
-!River Loads - used in 3D only
-1		!rcNO3  - factor multiplying NO3 river load
-1		!rcNH4  - factor multiplying NH4 river load
-1		!rcPO4  - factor multiplying PO4 river load
-1		!rcSi   - factor multiplying Si river load
-
 !Other including Boundary Conditions
-1 1		!Which_VMix: 0==No VMixingi/Adv, Other==Yes VMixing/Adv   
-1		!KH_coeff: multiplying factor for KH in VMixing  
-1		!Which_Outer_BC: 0==Salinity, 1==GoMDOM original, 2==GoMDOM Full Grid
-0 0 0 		!Multipliers for OM_bc at initial conditions and for boundary conditions, lateral and shelf
 0               !DoDroop, 1==Droop
-
-C
-C  FIREAD file
-C
 
 5.00E-02          ! ALPHA_DIA: Initial slope of diatom light sat curve 
 5.00E-02          ! ALPHA_GRE: Initial slope of greens light sat curve
@@ -117,7 +78,7 @@ C
 0.0              ! KDPALG: DOP alg dependence
 
 0                ! KDWD: Specifies light attenuation eqn, default=0
-0                ! KE: Background light attenuation [m^-1]
+0.1                ! KE: Background light attenuation [m^-1]
 0                ! KECHL: Light attenuation factor for chlorophyll-a [m^2-kg^-1]
 
 1.00E-03         ! KHDONT_SED
@@ -165,16 +126,16 @@ C
 
 2                ! SILIM: Minimum nutrient limits growth
 
-18               ! TMD: opt temp dia
-18               ! TMG: opt temp gre
-30               ! TMNT: opt temp nitr
-20               ! TRD: opt metab temp (dia)
-20               ! TRG: opt metab temp (gre)
-20               ! TRHDR: opt hydr temp
-20               ! TRMNL: opt mineral temp
-20               ! TRSUA: opt Si diss temp
-20               ! TZREF: opt pred temp
-20               ! TREF: SOD reference temp
+13               ! TMD: opt temp dia
+13               ! TMG: opt temp gre
+15               ! TMNT: opt temp nitr
+15               ! TRD: opt metab temp (dia)
+15               ! TRG: opt metab temp (gre)
+15               ! TRHDR: opt hydr temp
+15               ! TRMNL: opt mineral temp
+15               ! TRSUA: opt Si diss temp
+15               ! TZREF: opt pred temp
+15               ! TREF: SOD reference temp
 0.15             ! ZDTH: zoo mort, was 5.0E-07
 1.05             ! ZTHET: temp coeff pred
 
@@ -251,11 +212,7 @@ C
 ! Settling rates
 
 2.00E-06		! VDIA  different from before
-5.79E-06                ! VDIAN (Droop - not tested)
-5.79E-06                ! VDIAP (Droop - not tested)
 4.00E-06		! VGRE	different from before
-5.79E-06                ! VGREN
-5.79E-06                ! VGREP	
 2.00E-06		! VLOC
 2.00E-06		! VROC
 2.00E-06		! VLON
@@ -264,3 +221,7 @@ C
 2.00E-06		! VROP
 8.00E-05		! VSU   different from before
 0.0E0                   ! VST   tracer
+5.79E-06                ! VDIAN (Droop - not tested)
+5.79E-06                ! VDIAP (Droop - not tested)
+5.79E-06                ! VGREN
+5.79E-06                ! VGREP

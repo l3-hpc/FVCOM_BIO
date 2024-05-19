@@ -1,0 +1,18 @@
+# This is the list of objects to compile. Edit as necessary to reflect
+# source file changes.
+# Note modules must be compiled in bottom-up dependency order.
+
+MOC_OBJ  = singledouble.o\
+	sw_adtg.o\
+	sw_ptmp.o\
+	sw_temp.o\
+	p80.o\
+	constants.o\
+	phsolvers.o\
+	varsolver.o\
+	depth2press.o\
+	rho.o\
+	rhoinsitu.o\
+	vars.o\
+	p2fCO2.o\
+	gasx.o
