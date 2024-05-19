@@ -4,7 +4,7 @@ For these bio models, I am rewriting so all of them can use the same mod_bio_3D.
 
 WARNING: this is work in progress.  In particular, since I am trying the above, when I update one model I may break another.  I will make a tagged version when everything is fine.
 
-One more thing: Don't Use CGEM.  GitHub is so I don't lose work in progress, not because it works.
+One more thing: Don't Use CGEM.  My code is in GitHub is so I don't lose work in progress, not because it's ready for prime time.
 
 ## FVCOM Licensing
 The files mod_bio_3D.F, bio_mixing.F, mod_1D.F, mod_parameter.F, makefile, make.inc were originally from FVCOM.  There are some changes, but those are largely written by FVCOM folks.
