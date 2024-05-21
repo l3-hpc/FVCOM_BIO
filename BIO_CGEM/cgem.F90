@@ -307,6 +307,10 @@ subroutine cgem_dim
   integer           :: istat,iunit
   character(len=1000) :: line
   !http://degenerateconic.com/namelist-error-checking.html
+#if defined(DEBUG)
+write(6,*) "Begin cgem_dim"
+#endif
+
   namelist /nosp/ nospA,nospZ,skipcgem,checkwindrad,debug,sinkwcgem,cgemcoords,cgemlat,cgemlon
 
   open(action='read',file='cgem.nml',iostat=istat,newunit=iunit)
@@ -361,6 +365,9 @@ subroutine cgem_read
    stop
   endif
 
+#if defined(DEBUG)
+ write(6,nml=switches)
+#endif
 
   !namelist /optics/
   read(nml=optics,iostat=istat,unit=iunit)
@@ -372,6 +379,11 @@ subroutine cgem_read
    stop
   endif
 
+#if defined(DEBUG)
+ write(6,nml=optics)
+#endif
+
+
   !namelist /temperature/
   read(nml=temperature,iostat=istat,unit=iunit)
   if (istat /= 0) then
@@ -382,6 +394,11 @@ subroutine cgem_read
    stop
   endif
 
+#if defined(DEBUG)
+ write(6,nml=temperature)
+#endif
+
+
   !namelist /phytoplankton/
   read(nml=phytoplankton,iostat=istat,unit=iunit)
   if (istat /= 0) then
@@ -391,6 +408,10 @@ subroutine cgem_read
         'Invalid line in namelist phytoplankton: '//trim(line)
    stop
   endif
+
+#if defined(DEBUG)
+ write(6,nml=phytoplankton)
+#endif
 
   !namelist /zooplankton/
   read(nml=zooplankton,iostat=istat,unit=iunit)
@@ -403,6 +424,10 @@ subroutine cgem_read
   endif
   optNP = ZQn/ZQp    ! Optimal nutrient ratio for zooplankton
 
+#if defined(DEBUG)
+ write(6,nml=zooplankton)
+#endif
+
   !namelist /OM/
   read(nml=OM,iostat=istat,unit=iunit)
   if (istat /= 0) then
@@ -412,6 +437,10 @@ subroutine cgem_read
         'Invalid line in namelist OM: '//trim(line)
    stop
   endif
+
+#if defined(DEBUG)
+ write(6,nml=OM)
+#endif
 
   close(iunit)
 

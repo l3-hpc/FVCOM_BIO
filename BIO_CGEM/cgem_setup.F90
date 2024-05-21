@@ -5,18 +5,21 @@ subroutine cgem_setup(tracers)
   integer, intent(in) :: tracers !value of ntrs(3)
   integer check_tracers
 
-  call cgem_dim  !Read nospA and nospZ
-
-#ifdef DEBUG
-write(6,*) "Begin cgem_init"
+#if defined(DEBUG)
+write(6,*) "Begin cgem_setup"
 #endif
 
+  call cgem_dim  !Read nospA and nospZ
+
+#if defined(DEBUG)
+write(6,*) "Begin cgem_init"
+#endif
 
 !SCHISM 
 !We have to figure out what to do about tracers
 !check that nospA and nospZ are such that tracers was set correctly in param.nml
   check_tracers = nospA*3+nospZ+25
-#ifdef DEBUG
+#if defined(DEBUG)
 write(6,*) "In cgem_setup,nospA,nospZ,tracers,check_tracers",nospA,nospZ,tracers,check_tracers
 #endif
 
@@ -31,7 +34,7 @@ write(6,*) "In cgem_setup,nospA,nospZ,tracers,check_tracers",nospA,nospZ,tracers
   call cgem_read
   call cgem_init
 
-#ifdef DEBUG
+#if defined(DEBUG)
 write(6,*) "End cgem_setup,tracers,check_tracers",tracers,check_tracers
 #endif
 

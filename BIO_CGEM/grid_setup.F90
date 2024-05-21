@@ -12,6 +12,13 @@ subroutine grid_setup(nvrts)
   START_SECONDS = &
   TOTAL_SECONDS( iYrS, iYrS, iMonS, iDayS, iHrS, iMinS, iSecS )
 
+#if defined(DEBUG)
+write(6,*) "km",km
+write(6,*) "START_SECONDS",START_SECONDS
+write(6,*) "iYr,etc,",iYrS, iYrS, iMonS, iDayS, iHrS, iMinS, iSecS
+#endif
+
+
 return
 end subroutine
 

@@ -16,9 +16,8 @@
 
 BIOMODULE	= \
 libbiomodule.a(mod_1D.o)			\
-libbiomodule.a(mod_nutrient.o)			\
 libbiomodule.a(mod_parameter.o)                  \
-libbiomodule.a(nutrients.o)			\
+libbiomodule.a(sinking.o)			\
 libbiomodule.a(bio_geo_chem.o) \
 libbiomodule.a(bio_mixing.o)
 

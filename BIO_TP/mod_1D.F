@@ -15,8 +15,9 @@ MODULE MOD_1D
      INTEGER               :: KBV              ! VERTICAL LAYERS
      INTEGER               :: KBVM1            ! VERTICAL LAYERS MINUS 1
      INTEGER               :: NTT              ! TOTAL NUMBER OF STATE VARIALBES
-     INTEGER               :: NNA,INA          ! AUXILLIARY
-
+     INTEGER               :: INN !something about mixing
+     INTEGER :: ITS, INEA !debugging
+     INTEGER, ALLOCATABLE  :: ISINK_OUT(:)  !Sink out(1) or not(0)
      CHARACTER(LEN=50)               :: STRUCTURE     ! MODEL STRUCTURE
      CHARACTER(LEN=50), ALLOCATABLE  :: BIO_NAME(:,:) ! VARIABLE NAME FOR NETCDF OUTPUT
 
@@ -26,9 +27,10 @@ MODULE MOD_1D
      REAL(SPP), ALLOCATABLE :: DELTA_Z(:)       ! LAYER BETWEEN SIGMA CENTRE
      REAL(SPP), ALLOCATABLE :: DEPTH_Z(:)       ! DEPTH AT EACH LAYER CENTRE
      REAL(SPP), ALLOCATABLE :: KM_BIO(:)        ! VERTICAL MIXING COEFFICIENT
-     REAL(SPP), ALLOCATABLE :: RADIATION(:)     ! SURFACE RADIATION
      REAL(SPP), ALLOCATABLE :: T_BIO(:)         ! TEMPERATURE
      REAL(SPP), ALLOCATABLE :: S_BIO(:)         ! Salinity
+     REAL(SPP), ALLOCATABLE :: N_0(:)           ! Threshold for (not) sinking
+     REAL(SPP), ALLOCATABLE :: W_N(:)           ! Sinking velocity 
      REAL(SPP)              :: T_STEP           ! TIME STEP
 
 

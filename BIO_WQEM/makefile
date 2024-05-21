@@ -53,7 +53,7 @@ libbiomodule.a: $(BIOMODULE)
 	\rm $*.f90
 
 clean:
-	/bin/rm -f lib*.a  *.mod *.o *.f90 rv
+	/bin/rm -f lib*.a  *.mod *.o *.f90
 
 clobber:
 		make clean

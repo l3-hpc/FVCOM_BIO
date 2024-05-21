@@ -61,7 +61,7 @@
   REAL*8   :: xha
 
 
-#ifdef DEBUG
+#if defined(DEBUG)
 write(6,*) "In calc_solar_zenith"
 #endif
 
@@ -83,7 +83,7 @@ write(6,*) "In calc_solar_zenith"
    &    - 0.154527*cos(3.0*rthez) + 0.084798*sin(3.0*rthez)           
    rsdec = sdec/rad; ! in radians
 
-#ifdef DEBUG
+#if defined(DEBUG)
 !write(6,*) "In calc_solar_zenith,rsdec,rad=",rsdec,rad
 #endif
 
@@ -127,7 +127,7 @@ write(6,*) "In calc_solar_zenith"
        sunangle = 2.0*atan(1.0);
    ENDIF 
 
-#ifdef DEBUG
+#if defined(DEBUG)
 write(6,*) "End calc_solar_zenith"
 #endif
 

@@ -1,5 +1,6 @@
 !======================================================================     
   Subroutine cgem_step( ff,ff_new,dT, S, T, PAR, Wind, lat, dz, d_sfc, is_surface, is_bottom, Rad, inea )
+!       call cgem_step(ff,ff_new,T_STEP, S, T_B(k), PAR(k), cgem_wind, cgemlat, DELTA_D(k), DEPTH_Z(k), is_surface, is_bottom, Rad,INEA)
 
 !======================================================================
   use cgem
@@ -154,14 +155,31 @@
   real :: m_d_sfc(1),m_T(1),m_S(1)
   real :: pH
 
+
+#if defined(DEBUG)
+write(6,*) "ff",ff
+write(6,*) "ff_new",ff_new
+write(6,*) "dT",dT
+write(6,*) "S",S
+write(6,*) "T",T
+write(6,*) "PAR", PAR
+write(6,*) "Wind", Wind
+write(6,*) "lat",lat
+write(6,*) "dz",dz
+write(6,*) "d_sfc",d_sfc
+write(6,*) "is_surface", is_surface
+write(6,*) "is_bottom", is_bottom
+write(6,*) "Rad", Rad
+write(6,*) "inea", inea
+#endif
   !convert to timestep in days
   dTd = dt/SDay
 
   ! Renaming is for readability...
   A(:)  = ff(iA(:))
   ! After Advection and VMixing, return to Q's
-  Qn(:) = ff(iQn(:)) / A(:) 
-  Qp(:) = ff(iQp(:)) / A(:) 
+  Qn(:) = ff(iQn(:)) !L3/ A(:) 
+  Qp(:) = ff(iQp(:)) !L3/ A(:) 
   Z(:)  = ff(iZ(:))
   NO3   = ff(iNO3)
   NH4   = ff(iNH4)
@@ -192,8 +210,11 @@
   !- calc_Agrow calculates: 
   !    Agrow: production (cells/m3/s)
   !    Aresp: sum of somatic and basal respirtion (cells/m3/s)
+  if(debug.eq.2.and.inea.eq.10) write(6,*) "Before Agrow, PAR,T,Qn,Qp,Si,Agrow,uA,Aresp,uN,uP,uE,uSi"
+  if(debug.eq.2.and.inea.eq.10) write(6,*) PAR,T,Qn,Qp,Si,Agrow,uA,Aresp,uN,uP,uE,uSi
   call calc_Agrow(PAR,T,Qn,Qp,Si,A,Agrow,uA,Aresp,uN,uP,uE,uSi)
- 
+  if(debug.eq.2.and.inea.eq.10) write(6,*) "After Grow",PAR,T,Qn,Qp,Si,Agrow,uA,Aresp,uN,uP,uE,uSi
+
   !- ZgrazA_tot: total zooplankton grazing on Ai by all zooplankton groups (cells/m3/d)
   do isp = 1, nospA
      Abiovol         = A(isp)*volcell(isp) 
@@ -300,6 +321,7 @@
   ff_new(iA(:)) = DMAX1(A(:)        &
   & + ( Agrow(:) - Aresp(:) - ZgrazA_tot(:) - Amort(:) )*dTd,fmin(iA(:)))
   if(debug.eq.2.and.inea.eq.10) write(6,*) "PAR",PAR
+    if(debug.eq.2.and.inea.eq.10) write(6,*) "ff,ff_new",ff(iA(:)),ff_new(iA(:))
   if(debug.eq.2.and.inea.eq.10) write(6,*) "A,Agrow,Aresp,ZgrazA_tot,Amort,dTd",A,Agrow,Aresp,ZgrazA_tot,Amort,dTd
   !----------------------------------------------------------------------
   !-Qn: Phytoplankton Nitrogen Quota (mmol-N/cell)
@@ -316,7 +338,7 @@
     enddo
   endif
   if(debug.eq.2.and.inea.eq.10) write(6,*) "Qn,vN,Qp,uA",Qn,vN,Qp,vP,uA
-
+    if(debug.eq.2.and.inea.eq.10) write(6,*) "ff,ff_new,qn",ff(iQn(:)),ff_new(iQn(:))
   !----------------------------------------------------------------------
   !-Qp: Phytoplankton Phosphorus Quota (mmol-P/cell)
   !----------------------------------------------------------------------
@@ -331,6 +353,8 @@
         ff_new(iQp(isp)) = DMIN1(DMAX1(Qp(isp) + (vP(isp) - Qp(isp)*uA(isp))*dTd,QminP(isp)),QmaxP(isp))
     enddo
   endif
+  if(debug.eq.2.and.inea.eq.10) write(6,*) "Qn,vN,Qp,uA",Qn,vN,Qp,vP,uA
+      if(debug.eq.2.and.inea.eq.10) write(6,*) "qp,ff,ff_new",ff(iQp(:)),ff_new(iQp(:))
   !----------------------------------------------------------------------- 
 
   !----------------------------------------------------------------------
@@ -408,7 +432,7 @@
   ff_new(iZ(:))  = DMAX1( Z(:)                         &
   &      + (Zgrow(:) - Zresp(:) - Zmort(:))*dTd, fmin(iZ(:)))
   if(debug.eq.2.and.inea.eq.10) write(6,*) "Z,Zgrow,Zresp,Zmort",Z,Zgrow,Zresp,Zmort
-
+    if(debug.eq.2.and.inea.eq.10) write(6,*) "Zf,ff_new",ff(iZ(:)),ff_new(iZ(:))
   !-----------------------------------------------------------
   ! Remineralization - reactions
   !---------------------------------------------------------------
@@ -611,88 +635,124 @@
   !-NO3; (mmol-N/m3)
   ff_new(iNO3) = NO3                            &
   &  + ( RNO3 - AupN*NO3/Ntotal)*dTd
+    if(debug.eq.2.and.inea.eq.10) write(6,*) "no3,ff_new",NO3,ff_new(iNO3)
   !--------------------------------
   !-NH4; Ammonium (mmol-N/m3)
   ff_new(iNH4) = NH4                            &
   & + ( RNH4 - AupN*NH4/(Ntotal) + AexudN + SUM(ZexN(:)) )*dTd
+   if(debug.eq.2.and.inea.eq.10) write(6,*) "nh4,ff_new",NH4,ff_new(iNH4)
+
   !----------------------------
   !-Silica: (mmol-Si/m3)
   ff_new(iSi) =  Si                             &
   & + ( RSi - AupSi + SUM(ZegSi(:)) + SUM(ZunSi(:)) )*dTd
+   if(debug.eq.2.and.inea.eq.10) write(6,*) "Si,dTd,ff_new",Si,dTd,ff_new(iSi)
+
   !---------------------------------------------
   !-PO4: Phosphate (mmol-P/m3)
   ff_new(iPO4) = PO4                             &
   & + ( RPO4 - AupP + AexudP + SUM(ZexP(:)) )*dTd
 
+   if(debug.eq.2.and.inea.eq.10) write(6,*) "po4,ff_new",PO4,ff_new(iPO4)
+
   !---------------------------------------------------------
   !-DIC: Dissolved Inorganic Carbon (mmol-C/m3)
   ff_new(iDIC) = DIC                            &
   &  + ( RDIC - PrimProd + ArespC + ZrespC )*dTd
+   if(debug.eq.2.and.inea.eq.10) write(6,*) "DIC,ff_new",DIC,ff_new(iDIC)
+
   !-----------------------------------------------------------------------      
   !-O2: Oxygen (mmol O2 m-3) 
   ff_new(iO2)  = O2                             &  
   &  + ( RO2  + PrimProd - ArespC - ZrespC)*dTd
+   if(debug.eq.2.and.inea.eq.10) write(6,*) "O2,ff_new",O2,ff_new(iO2)
+
   !-----------------------------------------
   !-OM1_A: (mmol-C/m3-- Dead Phytoplankton Particulate)
   ff_new(iOM1CA) = OM1CA + (ROM1CA + OM1_CA)*dTd
   ff_new(iOM1NA) = OM1NA + (ROM1NA + OM1_NA)*dTd
   ff_new(iOM1PA) = OM1PA + (ROM1PA + OM1_PA)*dTd
-  if(debug.eq.2.and.is_bottom) write(6,*) "Bottom OM1A"
-  if(debug.eq.2) write(6,*) "f,fnew,rOM1A,OM1C",OM1CA,ff_new(iOM1CA),ROM1CA,OM1_CA
+  if(debug.eq.2.and.is_bottom.and.inea.eq.10) write(6,*) "Bottom OM1A"
+  if(debug.eq.2.and.inea.eq.10) write(6,*) "f,fnew,rOM1A,OM1C",OM1CA,ff_new(iOM1CA),ROM1CA,OM1_CA
   !-----------------------------------------------
   !-OM2_A: (mmol-C/m3-- Dead Phytoplankton Dissolved)
   ff_new(iOM2CA) = OM2CA + (ROM2CA + OM2_CA)*dTd
   ff_new(iOM2NA) = OM2NA + (ROM2NA + OM2_NA)*dTd
   ff_new(iOM2PA) = OM2PA + (ROM2PA + OM2_PA)*dTd
-  if(debug.eq.2.and.is_bottom) write(6,*) "Bottom OM2A"
-  if(debug.eq.2) write(6,*) "f,fnew,rOM2A,OM2C",OM2CA,ff_new(iOM2CA),ROM2CA,OM2_CA
+  if(debug.eq.2.and.inea.eq.10.and.is_bottom) write(6,*) "Bottom OM2A"
+  if(debug.eq.2.and.inea.eq.10) write(6,*) "f,fnew,rOM2A,OM2C",OM2CA,ff_new(iOM2CA),ROM2CA,OM2_CA
   !-----------------------------------------------
   !-OM1_Z:(mmol-C/m3--G particulate)
   ff_new(iOM1CZ) = OM1CZ + (ROM1CZ + OM1_CZ)*dTd
   ff_new(iOM1NZ) = OM1NZ + (ROM1NZ + OM1_NZ)*dTd
   ff_new(iOM1PZ) = OM1PZ + (ROM1PZ + OM1_PZ)*dTd
-  if(debug.eq.2.and.is_bottom) write(6,*) "Bottom OM1Z"
-  if(debug.eq.2) write(6,*) "f,fnew,rOM1Z,OM1Z",OM1CZ,ff_new(iOM1CZ),ROM1CZ,OM1_CZ
+  if(debug.eq.2.and.inea.eq.10.and.is_bottom) write(6,*) "Bottom OM1Z"
+  if(debug.eq.2.and.inea.eq.10) write(6,*) "f,fnew,rOM1Z,OM1Z",OM1CZ,ff_new(iOM1CZ),ROM1CZ,OM1_CZ
   !-----------------------------------------------
   !-OM2_Z:(mmol-C/m3--G dissolved)
   ff_new(iOM2CZ) = OM2CZ + (ROM2CZ + OM2_CZ)*dTd
   ff_new(iOM2NZ) = OM2NZ + (ROM2NZ + OM2_NZ)*dTd
   ff_new(iOM2PZ) = OM2PZ + (ROM2PZ + OM2_PZ)*dTd
-  if(debug.eq.2.and.is_bottom) write(6,*) "Bottom OM2Z"
-  if(debug.eq.2) write(6,*) "f,fnew,rOM2Z,OM2Z",OM2CZ,ff_new(iOM2CZ),ROM2CZ,OM2_CZ
+  if(debug.eq.2.and.inea.eq.10.and.is_bottom) write(6,*) "Bottom OM2Z"
+  if(debug.eq.2.and.inea.eq.10) write(6,*) "f,fnew,rOM2Z,OM2Z",OM2CZ,ff_new(iOM2CZ),ROM2CZ,OM2_CZ
   !---------------------------------------------------------------------
   !-OM1_R: (mmol-C/m3--SPM particulate)
   ff_new(iOM1R) = OM1R + ROM1_R*dTd
+     if(debug.eq.2.and.inea.eq.10) write(6,*) "OM1R,ff_new",OM1R,ff_new(iOM1R)
+
   !---------------------------------------------------------------------
   !-OM2_R: (mmol-C/m3--SPM dissolved)
   ff_new(iOM2R) = OM2R + ROM2_R*dTd
+       if(debug.eq.2.and.inea.eq.10) write(6,*) "OM2R,ff_new",OM2R,ff_new(iOM2R)
+
   !---------------------------------------------------------------------
   !-OM1_BC: (mmol-C/m3--initial and boundary condition OM particulate)
   ff_new(iOM1BC) = OM1BC + ROM1_BC*dTd
+       if(debug.eq.2.and.inea.eq.10) write(6,*) "OM1BC,ff_new",OM1BC,ff_new(iOM1BC)
+
   !---------------------------------------------------------------------
   !-OM2_BC: (mmol-C/m3--initial and boundary condition OM dissolved)
   ff_new(iOM2BC) = OM2BC + ROM2_BC*dTd
+         if(debug.eq.2.and.inea.eq.10) write(6,*) "OM2BC,ff_new",OM2BC,ff_new(iOM2BC)
   !---------------------------------------------------------------------
   !-CDOM: (ppb) 
   ff_new(iCDOM) =  CDOM - CDOM*KGcdom*dTd
+         if(debug.eq.2.and.inea.eq.10) write(6,*) "CDOM,ff_new",CDOM,ff_new(iCDOM)
   !!---------------------------------------------------------------------
   !!-ALK: (mmol-HCO3/m3)
   ff_new(iALK) =  ALK +                  &
   & (RALK + AupN*NO3/(Ntotal)            &
   &          - AupN*NH4/(Ntotal)         &
   &          + AupP + 4.8*AupP)*dTd
+       if(debug.eq.2.and.inea.eq.10) write(6,*) "ALK,ff_new",ALK,ff_new(iALK)
   !Tracer
   ff_new(iTr) = ff(iTr)
 
   ! Before transport, Combine A/Q's
-  ff_new(iQn(:)) = ff_new(iQn(:)) * ff_new(iA(:))
-  ff_new(iQp(:)) = ff_new(iQp(:)) * ff_new(iA(:))
+!L3  ff_new(iQn(:)) = ff_new(iQn(:)) * ff_new(iA(:))
+!L3  ff_new(iQp(:)) = ff_new(iQp(:)) * ff_new(iA(:))
+
+#if defined(DEBUG)
+write(6,*) "before flux"
+write(6,*) "ff",ff
+write(6,*) "ff_new",ff_new
+#endif
+
 
   if(is_surface.and.debug.eq.3) write(6,*) "before",ff_new(iO2),dz
   if(is_surface.and.debug.eq.3) write(6,*) "before",ff_new(iDIC)
   if(is_surface) call surface_flux(ff_new,dT,dz,T,S,Wind,pH)
   if(is_surface.and.debug.eq.3) write(6,*) "after",ff_new(iO2)
   if(is_surface.and.debug.eq.3) write(6,*) "after",ff_new(iDIC)
+
+#if defined(DEBUG)
+write(6,*) "after flux"
+write(6,*) "ff_new",ff_new
+#endif
+
+
+
+
   return
   end subroutine cgem_step
 !---------------------------------------------------------------------- 

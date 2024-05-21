@@ -12,8 +12,10 @@ MODULE MOD_1D
      INTEGER               :: KBV              ! VERTICAL LAYERS
      INTEGER               :: KBVM1            ! VERTICAL LAYERS MINUS 1
      INTEGER               :: NTT              ! TOTAL NUMBER OF STATE VARIALBES
-     !We shouldn't need this, fix later
-     REAL(SPP) :: IRRAD0
+     !Number of iterations
+     INTEGER               :: ITS
+     !Node number, for debugging
+     INTEGER               :: INEA
 
 
      CHARACTER(LEN=50)               :: STRUCTURE     ! MODEL STRUCTURE

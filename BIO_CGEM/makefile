@@ -15,15 +15,15 @@
 #         FC       = mpif90 -static-libcxa -i-static
 
 BIOMODULE	= \
+libbiomodule.a(grid.o)                       \
 libbiomodule.a(mod_1D.o)                       \
+libbiomodule.a(schism_glbl.o) \
 libbiomodule.a(mod_parameter.o)                 \
+libbiomodule.a(cgem.o) \
 libbiomodule.a(mod_nutrient.o)                 \
 libbiomodule.a(bio_mixing.o)                    \
-libbiomodule.a(schism_glbl.o) \
 libbiomodule.a(date_time.o) \
-libbiomodule.a(grid.o) \
 libbiomodule.a(grid_setup.o) \
-libbiomodule.a(cgem.o) \
 libbiomodule.a(cgem_setup.o) \
 libbiomodule.a(calcAgrow.o) \
 libbiomodule.a(cgem_utils.o) \
@@ -53,9 +53,9 @@ libbiomodule.a(bio_geo_chem.o)
 
 LIBS	=	libbiomodule.a
 
-#FFLAGS_BIO = -O3
-FFLAGS_BIO = -g -debug -check all -traceback
-
+FFLAGS_BIO = -O3 -fp-model strict
+#FFLAGS_BIO = -g -debug -check all -traceback
+#CPPFLAGS = -DDEBUG
 
 libbiomodule.a: $(BIOMODULE)
 
@@ -67,18 +67,16 @@ libbiomodule.a: $(BIOMODULE)
 	$(FC) -c $(FFLAGS_BIO) $*.f90 > $*.o
 #	$(AR) $(ARFLGS) $@ $<	
 	ar rv libbiomodule.a *.o
-	\rm $*.f90
 
 .F90.o:
 	$(CPP) $(CPPFLAGS) $(CPPARGS) $*.F90 > $*.f90
 	$(FC) -c $(FFLAGS_BIO) $*.f90 > $*.o
 	ar rv libbiomodule.a *.o
-	\rm $*.f90
 
 
 
 clean:
-	/bin/rm -f lib*.a  *.mod *.o *.f90 rv
+	/bin/rm -f lib*.a  *.mod *.o *.f90
 
 clobber:
 		make clean

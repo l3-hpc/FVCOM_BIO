@@ -45,7 +45,7 @@ MODULE MOD_BIO_3D
 
 !   use netcdf
 
-   USE MOD_1D !BIO_VAR,T_BIO,S_BIO,DELTA_D,DELTA_Z,DEPTH_Z
+   USE MOD_1D !BIO_VAR,T_BIO,S_BIO,DELTA_D,DELTA_Z,DEPTH_Z,ITS
    !USE MOD_NUTRIENT !,        ONLY: BIO_N,NTT,INN
    USE MOD_PARAMETER
 
@@ -59,7 +59,7 @@ MODULE MOD_BIO_3D
 !************   FOR NETCDF OUTPUT
    INTEGER, ALLOCATABLE :: trcsid(:)
    REAL(SP),ALLOCATABLE :: BIO_VAR_MEAN(:,:,:)
-   REAL(SP) :: Wind
+   REAL(SP) :: Wind,IRRAD0
 !!$   CHARACTER(LEN=80) STARTUP_BIO_TYPE  !!TYPE OF BIO START
 
 !!$   NAMELIST /NML_BIOLOGICAL/     &
@@ -134,12 +134,25 @@ SUBROUTINE BIO_3D1D
 !L3  in a subroutine 'bio_geo_chem'
        !For a column
        IRRAD0=-SWRAD(I)*SPRO/RAMP      !PAR FRACTION
-       !wind = SQRT(WIND_X*WIND_X+WIND_Y*WIND_Y)
-       wind = 5.
+       Wind = SQRT(UUWIND(I)*UUWIND(I)+VVWIND(I)*VVWIND(I))
+       !Integer number of iterations
+       ITS = IINT
+       !For debug statements, which node to print info for
+       INEA = I
+       !I don't know
+       INN = 1
+Wind = 5.
+!IRRAD0 = 800.
+#if defined(DEBUG)
+write(6,*) IRRAD0
+write(6,*) Wind
+write(6,*) ITS
+write(6,*) INEA
+#endif
        if(dbg_set(dbg_sbr)) write(ipt,*)&
        & "wind"
        !This updates BIO_VAR
-       call bio_geo_chem(BIO_VAR,T_BIO,S_BIO,IRRAD0)
+       call bio_geo_chem(BIO_VAR,T_BIO,S_BIO,IRRAD0,Wind)
 
       KM_BIO(:)=KH(I,:)
       CALL BIO_MIXING 

@@ -1,7 +1,6 @@
    MODULE MOD_PARAMETER
 !** This routine reads in the control parameters for the biological model.  
       USE MOD_1D
-      USE MOD_NUTRIENT
 !      USE LIMS, ONLY: KB
       IMPLICIT NONE
       SAVE
@@ -20,6 +19,7 @@
 
 !************************    BEGINNING EXECUTABLE    **********************
       KBVM1=KBV-1
+      INN = 1
 
       !ensure biological parameter file exists    
       inquire(file=trim(fname),exist=fexist)
@@ -31,22 +31,11 @@
 
       OPEN (1, FILE=trim(fname),status='old')
 
-!Read Detritus parameters
-      READ(1,*) NNN
-            NTT=NNN   !TOTAL VARIABLE NUMBER FOR VERTICAL MIXING
-            INN=1
+!Read parameters
+      READ(1,*) NTT
+            !INN=1
 
-      ALLOCATE (NUTRIENT_NAME(NNN), NUTRIENT_UNIT(NNN))
-      DO J=1,NTT
-        READ(1,*)NUTRIENT_NAME(J),NUTRIENT_UNIT(J)
-      END DO
-
-       write(6,*) "Det name unit", NUTRIENT_NAME(1), NUTRIENT_UNIT(1)
-
-
-!      NUTRIENT_NAME(1) = "TP"
-!      NUTRIENT_UNIT(1) = "mg/L"
-
+      ALLOCATE (NUTRIENT_NAME(NTT), NUTRIENT_UNIT(NTT))
 !*******************    BIO_NAME ASSIGNMENT FOR NETCDF OUT PUT   ***************
             ALLOCATE (BIO_NAME(NTT,4))
             BIO_NAME(:,3)  = 'Concentration'
@@ -64,22 +53,24 @@
       ALLOCATE (KM_BIO(KBV))             ;  KM_BIO      =  0.0_SPP  !DIFFUSIVITY 
       ALLOCATE (T_BIO(KBV))              ;  T_BIO       =  0.0_SPP  !TEMPERATURE
       ALLOCATE (S_BIO(KBV))              ;  S_BIO       =  0.0_SPP  !SALINITY
-
+      ALLOCATE (ISINK_OUT(NTT))         ;  ISINK_OUT  =  0        !0=no sink out, 1=sinks out
 !******************  ALLOCATING             NUTRIENT       AND INITIALIZATION   *************************
    !Calculated
-      ALLOCATE (BIO_N(KBV,NNN))          ;  BIO_N       =  0.0_SPP  !NUTRIENT ABUNDANCE
-      ALLOCATE (NUTRIENT(KBV,NNN))        ;  NUTRIENT     =  0.0_SPP  !NUTRIENT CONCENTRATION 
-      ALLOCATE (N_SINK(KBV,NNN))         ;  N_SINK      =  0.0_SPP  !NUTRIENT SINKING FLUX
-      ALLOCATE (N_SINK1(KBV))            ;  N_SINK1     =  0.0_SPP  !SINKING FLUX WITHIN 1 ITERATION
-      ALLOCATE (W_N_TOTAL(NNN))          ;  W_N_TOTAL   =  0.0_SPP  !SINKING DISTANCE WITIN 1 T_STEP
+      !ALLOCATE (NUTRIENT(KBV,NTT))        ;  NUTRIENT     =  0.0_SPP  !NUTRIENT CONCENTRATION 
    !Input
-      ALLOCATE (N_0(NNN))                ;  N_0         =  0.0_SPP  !NUTRIENT THRESHOLD
-      ALLOCATE (W_N(NNN))                ;  W_N         =  0.0_SPP  !NUTRIENT SINKING VELOCITY
+      ALLOCATE (N_0(NTT))                ;  N_0         =  0.0_SPP  !NUTRIENT THRESHOLD
+      ALLOCATE (W_N(NTT))                ;  W_N         =  0.0_SPP  !NUTRIENT SINKING VELOCITY
     
    !Read inputs
-      READ(1,*)  N_0 != 0.00 Nutrient threshold, (units of nutrient)
-      READ(1,*)  W_N ! = TP (as NUTRIENT) sinking rate, (m s-1)
-      READ(1,*)  ISINK_OUT !1=sink out, 0=no sink out 
+      DO J=1,NTT
+        READ(1,*)  NUTRIENT_NAME(J),NUTRIENT_UNIT(J)
+        READ(1,*)  N_0(J)       != 0.00 Nutrient threshold, (units of nutrient)
+        READ(1,*)  W_N(J)       ! = TP (as NUTRIENT) sinking rate, (m s-1)
+        READ(1,*)  ISINK_OUT(J) !1=sink out, 0=no sink out
+      END DO
+
+      write(6,*) "name",NUTRIENT_NAME
+      write(6,*) "unit",NUTRIENT_UNIT
       write(6,*) "N_0", N_0 
       write(6,*) "W_N",W_N
       write(6,*) "ISINK_OUT",ISINK_OUT

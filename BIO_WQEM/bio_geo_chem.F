@@ -1,7 +1,7 @@
 !=======================================================================
 !  GoMDOM for FVCOM, bio-geo-chem subroutine
 !=======================================================================
-SUBROUTINE bio_geo_chem(B_N,T_B,S_B,IRRAD)
+SUBROUTINE bio_geo_chem(B_N,T_B,S_B,IRRAD,Wind)
 !------------------------------------------------------------------------------
 !
 !FVCOM  Define global data.
@@ -18,7 +18,7 @@ USE EUT
 IMPLICIT NONE
 
 !GOMDOM
-REAL(SPP), INTENT(IN) :: IRRAD
+REAL(SPP), INTENT(IN) :: IRRAD,Wind
 REAL(SPP), INTENT(IN) :: T_B(KBV),S_B(KBV)
 REAL(SPP), INTENT(INOUT) :: B_N(KBV,NTT)
 REAL(SPP) :: PAR(KBV),x

@@ -13,7 +13,8 @@ MODULE MOD_1D
      INTEGER               :: KBVM1            ! VERTICAL LAYERS MINUS 1
      INTEGER               :: NTT              ! TOTAL NUMBER OF STATE VARIALBES
      INTEGER               :: isink_out        ! Sink out(1) or not(0)
-
+     !which node, which iteration
+     INTEGER INEA,ITS
      CHARACTER(LEN=50)               :: STRUCTURE     ! MODEL STRUCTURE
      CHARACTER(LEN=50), ALLOCATABLE  :: BIO_NAME(:,:) ! VARIABLE NAME FOR NETCDF OUTPUT
 
@@ -22,7 +23,6 @@ MODULE MOD_1D
      REAL(SPP), ALLOCATABLE :: BIO_0(:)     ! Threshold, doesn't sink 
      REAL(SPP), ALLOCATABLE :: KM_BIO(:)        ! VERTICAL MIXING COEFFICIENT
      REAL(SPP)              :: T_STEP           ! TIME STEP
-     REAL(SPP)              :: IRRAD0           ! Surface irradiance
      REAL(SPP), ALLOCATABLE :: DELTA_D(:)        ! LAYER THICKNESS
      REAL(SPP), ALLOCATABLE :: DELTA_Z(:)        ! THICKNESS BETWEEN LAYER CENTRE
      REAL(SPP), ALLOCATABLE :: DEPTH_Z(:)        ! DEPTH AT EACH LAYER CENTER 

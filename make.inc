@@ -118,7 +118,7 @@ dashL= $(empty) -L
 #            FLAG_1 =  -DDOUBLE_PRECISION 
 
 ## SINGLE PRECISION OUTPUT FOR VISIT
-#            FLAG_1 =  -DDOUBLE_PRECISION -DSINGLE_OUTPUT
+            FLAG_1 =  -DDOUBLE_PRECISION -DSINGLE_OUTPUT
 
 #--------------------------------------------------------------------------
 #        SPHERICAL          SELECT SPHERICAL COORDINATES FOR INTEGRATION
@@ -361,10 +361,10 @@ dashL= $(empty) -L
 #            FLAG_251 = -DOFFLINE_BIOLOGY
 #            BIOLIB   = -L$(TOPDIR)/BIO_TP -lbiomodule
 #            BIOINCS  = -I$(TOPDIR)/BIO_TP
-#            BIOLIB   = -L$(TOPDIR)/BIO_WQEM -lbiomodule
-#            BIOINCS  = -I$(TOPDIR)/BIO_WQEM
-            BIOLIB   = -L$(TOPDIR)/BIO_CGEM -lbiomodule
-            BIOINCS  = -I$(TOPDIR)/BIO_CGEM
+            BIOLIB   = -L$(TOPDIR)/BIO_WQEM -lbiomodule
+            BIOINCS  = -I$(TOPDIR)/BIO_WQEM
+#            BIOLIB   = -L$(TOPDIR)/BIO_CGEM -lbiomodule
+#            BIOINCS  = -I$(TOPDIR)/BIO_CGEM
 
 
 #--------------------------------------------------------------------------
@@ -618,6 +618,7 @@ dashL= $(empty) -L
    $(FLAG_43) $(FLAG_LAM)\
    $(FLAG_101) $(FLAG_102) $(FLAG_103) $(FLAG_104) $(FLAG_105)\
    $(FLAG_211) $(FLAG_212) $(FLAG_213) $(FLAG_251) $(FLAG_261) $(FLAG_262)
+# -DDEBUG
 #--------------------------------------------------------------------------
 #  Libraries           
 #--------------------------------------------------------------------------

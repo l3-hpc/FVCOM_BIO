@@ -3,7 +3,6 @@ SUBROUTINE BIO_MIXING
 !     vertical mixing adopted from FVCOM                                       !
 !==============================================================================|
    USE MOD_1D
-   USE MOD_NUTRIENT
    !USE MOD_BIO_3D
    IMPLICIT NONE
    INTEGER :: I,K,J,J1,KI, KVM1,KVM2

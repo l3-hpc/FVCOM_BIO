@@ -2,7 +2,6 @@
 !** This routine reads in the control parameters for the biological model.  
 !      USE mod_fvcom
       USE mod_1D
-
 !      USE LIMS, ONLY: KB
       IMPLICIT NONE
       SAVE
@@ -13,9 +12,13 @@
       INTEGER                        ::  INN = 1
 
 
+
 !*****************************  CONTAINS   ********************************
       CONTAINS
       SUBROUTINE GET_PARAMETER_NEW(fname)
+
+      USE grid, only: iYrS,iMonS,iDayS,iHrS,iMinS,iSecS
+
       character(len=*)    :: fname
       logical             :: fexist
       INTEGER                        ::  I,J,K
@@ -25,7 +28,6 @@
       REAL(SPP) :: rdum
 !************************    BEGINNING EXECUTABLE    **********************
       KBVM1=KBV-1
-      call grid_setup(KBVM1)
 
       !ensure biological parameter file exists    
       inquire(file=trim(fname),exist=fexist)
@@ -38,18 +40,19 @@
       OPEN (1, FILE=trim(fname),status='old')
 
 !Read 'Nutrient' parameters
-write(6,*) "read bio input, number of state variables"
+!write(6,*) "read bio input, number of state variables"
       READ(1,*) NTT 
             INN=1
-write(6,*) "nf",NTT
+      READ(1,*) iYrS,iMonS,iDayS,iHrS,iMinS,iSecS
+!write(6,*) "nf",NTT
       CLOSE(1)
-
+      call grid_setup(KBVM1)
       call cgem_setup(NTT)
-write(6,*) "after cgem_setup",NTT
+!write(6,*) "after cgem_setup",NTT
 
       ALLOCATE (NUTRIENT_NAME(NTT), NUTRIENT_UNIT(NTT))
 
-#ifdef DEBUG
+#if defined(DEBUG)
 write(6,*) "NTT",NTT
 #endif
 
@@ -118,11 +121,11 @@ write(6,*) "NTT",NTT
    NUTRIENT_NAME(30) = "Tr"
    NUTRIENT_UNIT(30) = "none"
 
-!#ifdef DEBUG
+#if defined(DEBUG)
       DO J=1,NTT
        write(6,*) NUTRIENT_NAME(J),NUTRIENT_UNIT(J)
       END DO
-!#endif
+#endif
 
 
 !*******************    BIO_NAME ASSIGNMENT FOR NETCDF OUT PUT   ***************
@@ -132,7 +135,7 @@ write(6,*) "NTT",NTT
             DO J=1,NTT
               BIO_NAME(J,1)=NUTRIENT_NAME(J)
               BIO_NAME(J,2)=NUTRIENT_UNIT(J)
-              write(6,*) BIO_NAME(J,1),BIO_NAME(J,2)
+              !write(6,*) BIO_NAME(J,1),BIO_NAME(J,2)
             END DO
 
 !************* ALLOCATING                   GLOBAL PARAMETERS      AND INITIALIZAITON

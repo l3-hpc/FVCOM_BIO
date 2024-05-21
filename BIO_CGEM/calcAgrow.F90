@@ -50,6 +50,7 @@ subroutine calc_Agrow( E, T, Qn, Qp, Si, A, Agrow, &
   real(rkind),dimension(nospA)       :: min_S           ! Limiting substrate values
   real(rkind),dimension(nospA)       :: respg2          ! Actual respiration coefficient
 !------------------------------------------------------------------------
+
 !-------------------------------
 ! Begin growth rate calculations
 !-------------------------------
@@ -59,6 +60,9 @@ subroutine calc_Agrow( E, T, Qn, Qp, Si, A, Agrow, &
        min_S(isp) = DMIN1( f_N(isp), f_P(isp), f_Si(isp) )
     enddo
     call func_E( E, min_S, f_E ) ! Light growth function
+
+
+    !write(6,*) "In Agrow,fN,P,Si,f_E,Tadj",f_N,f_P,f_Si,f_E,Tadj
 
     !Output variables to examine light vs. nutrient limitations 
     do isp = 1,nospA
@@ -296,9 +300,10 @@ subroutine func_T( T, Tadj )
   real(rkind), dimension(nospA+nospZ) :: Tref_in_K
   integer :: isp
 
-#ifdef DEBUG
+#if defined(DEBUG)
 write(6,*) "func_T, nospA, which_temperature",nospA,which_temperature
 #endif
+
 
   if (which_temperature.eq.1) then !Sigmoidal
     do isp=1,nospA+nospZ
