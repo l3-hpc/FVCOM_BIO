@@ -17,7 +17,7 @@ A while back, I decided to try rewriting GOMDOM(now WQEM) so it can be called by
 
 So far, it appears to work, meaning when I tried different things, the output did what I expected.
 - PAR wasn't going to the bottom.  (or, like, in more than .5m of water).  I found the initial LOC was way high so changed that, and got more PAR.  Then I changed to KD=1 and got more PAR. Phytoplankton grows with more par.
-- I changed the refernce temperatures to be lower and got more 'activity'.  (Lake Erie in January is cold...)
+- I changed the reference temperatures to be lower and got more 'activity'.  (Lake Erie in January is cold...)
 - Sinking is more noticable in variables that sink faster.  I made it 'not sink out'.
 Here's a super quick viz of [PAR and GRE](https://youtu.be/JEc_AALF7x4).
 
@@ -29,7 +29,7 @@ I was showing Wilson and Cody the FVCOM-GOMDOM code, and there was some really w
 It is sort of like the above weird multiplying and dividing by dt in the BIO_TP model...you don't really notice unless you get rid of most of the code.  
 
 ## BIO_CGEM
-Since CGEM was rewritten for SCHISM to be as separate as possible from the hydro, I think it can be easily used with FVCOM.  So I'm trying it out.  The current status is that it compiles and runs, but doesn't actually work.  To finish this, I'll probably look around for a smaller test grid.
+Since CGEM was rewritten for SCHISM to be as separate as possible from the hydro, I think it can be easily used with FVCOM.  So I'm trying it out.  The current status is that it compiles and runs, but doesn't actually work.  To finish this, I'll probably look around for a smaller test grid.  (Update: I think the problem was with precision, see below.  A new test run is waiting in the queue.  I really need a smaller test case...)
 
 ## Precision!
 Use double_precision, because bio-geo vars don't move much in 10 seconds, and especially with CGEM units, you are adding a tiny df * dt.  Use single precision output, or VisIt will crash.  Just be happy and follow make.inc.
