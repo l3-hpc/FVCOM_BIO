@@ -23,8 +23,6 @@ Here's a super quick viz of [PAR and GRE](https://youtu.be/JEc_AALF7x4).
 
 Sinking is done by the same subroutine as used in BIO_TP.
 
-### BTW: Remember the weirdness?
-I was showing Wilson and Cody the FVCOM-GOMDOM code, and there was some really weird copying back and forth that didn't make sense.  I just said (shrug) 'it wasn't me'.  Now I realize the weirdness was because you actually needed to do that when you had phyto, zoo, det, etc. separated into categories(BIO_P, BIO_Z, etc.) and had to add them back to a main BIO_VAR.  My BIOs just have one 'group', so the copy was really doing nothing but wasting time. Anyway, this version cleans that up a bit. 
 
 ## BIO_CGEM
 Since CGEM was rewritten for SCHISM to be as separate as possible from the hydro, I think it can be easily used with FVCOM.  So I'm trying it out.  The current status is that it compiles and runs, but doesn't actually work.  To finish this, I'll probably look around for a smaller test grid.  (Update: I think the problem was with precision, see below.  A new test run is waiting in the queue.  I really need a smaller test case...)
