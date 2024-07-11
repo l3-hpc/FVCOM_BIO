@@ -1,8 +1,14 @@
+***To use the last confirmed working version of BIO_TP, the one that was used for publishing [this paper](https://doi.org/10.1016/j.ecolmodel.2024.110718), get the first tagged version, [the release](https://github.com/l3-hpc/FVCOM_BIO/releases/tag/v1.0)***
+
 # FVCOM_BIO
 
-For these bio models, I am rewriting so all of them can use the same mod_bio_3D.F.
+For these bio models, I am rewriting so all of them can use the *same* mod_bio_3D.F.
 
-WARNING: this is work in progress.  In particular, since I am trying the above, when I update one model I may break another.  I will make a tagged version when everything is fine. (My code is in GitHub is so I don't lose work in progress, not because it's ready for prime time.)
+***WARNING***
+- This is work in progress.  In particular, since I am trying the above, when I update one model I may break another.  I will make a tagged version when everything is fine. (My code is in GitHub is so I don't lose work in progress, not because it's ready for prime time.)
+- On last modification, I broke the TP model.  So likely, nothing works.
+- Why do I leave broken code in GitHub?   After this 'first pass', I believe it will be relatively straightforward for someone to take over the implementation (given time and funding), but it would be extremely difficult for someone (other than me) to implement WQEM+CGEM+TP with FVCOM from scratch.  Wanna take over?  Contact me and I'll walk you through it.  
+
 
 ## FVCOM Licensing
 The files mod_bio_3D.F, bio_mixing.F, mod_1D.F, mod_parameter.F, makefile, make.inc were originally from FVCOM.  There are some changes, but those are largely written by FVCOM folks.
