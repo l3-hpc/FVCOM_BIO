@@ -7,7 +7,8 @@ For these bio models, I am rewriting so all of them can use the *same* mod_bio_3
 ***WARNING***
 - This is work in progress.  In particular, since I am trying the above, when I update one model I may break another.  I will make a tagged version when everything is fine. (My code is in GitHub is so I don't lose work in progress, not because it's ready for prime time.)
 - On last modification, I broke the TP model.  So likely, nothing works.
-- Why do I leave broken code in GitHub?   After this 'first pass', I believe it will be relatively straightforward for someone to take over the implementation (given time and funding), but it would be extremely difficult for someone (other than me) to implement WQEM+CGEM+TP with FVCOM from scratch.  Wanna take over?  Contact me and I'll walk you through it.  
+- Why do I leave broken code in GitHub?   After this 'first pass', I believe it will be relatively straightforward for someone to take over the implementation (given time and funding), but it would be extremely difficult for someone (other than me) to implement WQEM+CGEM+TP with FVCOM from scratch.  Wanna take over?  Contact me and I'll walk you through it.
+- I think I would not continue working on this without first identifying a smaller test case.  I'm testing using Lake Erie, and it is just too big(takes too long to run, large outputs) for efficient dev and test.
 
 
 ## FVCOM Licensing
